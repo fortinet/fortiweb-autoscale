@@ -1,0 +1,634 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "FortiWeb Autoscale Solution (New VPC). This template deploys Fortinet FortiWeb cluster into a new VPC with a Multi-AZ Autoscale group with Lambda and LifecycleHook. Please see the Quick Start documentation for more details. **WARNING** You will be billed for the FortiWeb On-Demand instances and related AWS resources if you create a stack from this template.",
+    "Parameters": {
+        "CustomIdentifier": {
+            "Type": "String",
+            "Default": "fwbASG",
+            "MaxLength": "10",
+            "AllowedPattern": "[A-Za-z0-9]+",
+            "ConstraintDescription": "must only contain uppercase and lowercase letters and numbers. Max length is 10.",
+            "Description": "A custom identifier as resource name prefix. Must be at most 10 characters long and only contain uppercase, lowercase letters, and numbers. Max length is 10."
+        },
+        "QSS3BucketName": {
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$|^$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "",
+            "Description": "The name of the S3 bucket in which the FortiWeb autoscaling deployment package is stored, for example, aws-quickstart. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+        },
+        "QSS3KeyPrefix": {
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$|^$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "",
+            "Description": "The path of the FortiWeb autoscaling deployment package in s3, for example: quickstart-fortinet-FortiWeb/. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/). If there is no S3 key prefix, set it empty."
+        },
+        "AvailabilityZones": {
+            "Description": "The list of Availability Zones to use for the subnets in the VPC. The Quick Start uses two Availability Zones from your list and preserves the logical order you specify.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "VPCCIDR": {
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format.",
+            "Description": "The CIDR block for the VPC."
+        },
+        "PublicSubnet1CIDR": {
+            "Type": "String",
+            "Default": "10.0.0.0/24",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format.",
+            "Description": "The CIDR block for the public (DMZ) subnet located in Availability Zone 1."
+        },
+        "PublicSubnet2CIDR": {
+            "Type": "String",
+            "Default": "10.0.2.0/24",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format.",
+            "Description": "The CIDR block for the public (DMZ) subnet located in Availability Zone 2."
+        },
+        "FortiWebVersionShow": {
+            "Type": "String",
+            "Default": "LATEST",
+            "ConstraintDescription": "must be a valid FortiWeb version.",
+            "Description": "The version of FortiWeb.",
+            "AllowedValues": [
+                "LATEST"
+            ]
+        },
+        "FortiWebInstanceType": {
+            "Type": "String",
+            "Default": "c5.large",
+            "AllowedValues": [
+                "t3.small",
+                "t3.medium",
+                "t3.large",
+                "t3.xlarge",
+                "t3.2xlarge",
+                "m5.large",
+                "m5.xlarge",
+                "m5.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c5.large",
+                "c5.xlarge",
+                "c5.2xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "r5.large",
+                "r5.xlarge",
+                "r5.2xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Description": "Instance type to launch as FortiWeb On-Demand instances. For more information about instance types, see https://aws.amazon.com/ec2/instance-types/"
+        },
+        "ExpireLifecycleEntry": {
+            "Type": "Number",
+            "Default": 300,
+            "MinValue": 60,
+            "MaxValue": 3600,
+            "ConstraintDescription": "must be a valid number between 60 and 3600.",
+            "Description": "FortiWeb instance lifecycle expiry entry (in seconds). Minimum is 60. Maximum is 3600."
+        },
+        "FortiWebAsgCooldown": {
+            "Type": "Number",
+            "Default": 300,
+            "MinValue": 60,
+            "MaxValue": 3600,
+            "ConstraintDescription": "must be a valid number between 60 and 3600.",
+            "Description": "Auto-Scaling group waits for the cooldown period (in seconds) to complete before resuming scaling activities. Minimum is 60. Maximum is 3600."
+        },
+        "FortiWebAsgDesiredCapacity": {
+            "Type": "Number",
+            "Default": 2,
+            "MinValue": 1,
+            "ConstraintDescription": "must be a valid number not less than 1. Value must be between \"Minimum group size\" and \"Maximum group size\".",
+            "Description": "The number of FortiWeb instances the group should have at any time, also called desired capacity. Must keep at least 1 FortiWeb in the group. Minimum is 1. Value must be between \"Minimum group size\" and \"Maximum group size\"."
+        },
+        "FortiWebAsgMinSize": {
+            "Type": "Number",
+            "Default": 2,
+            "MinValue": 1,
+            "ConstraintDescription": "must be a valid number not less than 1. Value should be less than or equal to \"Desired capacity\".",
+            "Description": "Minimum number of FortiWeb instances in the Auto-Scaling Group. Minimum is 1. Value should be less than or equal to \"Desired capacity\"."
+        },
+        "FortiWebAsgMaxSize": {
+            "Type": "Number",
+            "Default": 4,
+            "MinValue": 1,
+            "MaxValue": 16,
+            "ConstraintDescription": "must be a valid number between 1 and 16. Value should be greater than or equal to \"Desired capacity\".",
+            "Description": "Maximum number of FortiWeb instances in the Auto-Scaling Group. Minimum is 1. Maximum is 16. Value should be greater than or equal to \"Desired capacity\"."
+        },
+        "FortiWebAsgHealthCheckGracePeriod": {
+            "Type": "Number",
+            "Default": 300,
+            "MinValue": 60,
+            "ConstraintDescription": "must be a valid number not less than 60.",
+            "Description": "The length of time (in seconds) that Auto-Scaling waits before checking an instance's health status. Minimum is 60."
+        },
+        "FortiWebAsgScaleInThreshold": {
+            "Type": "Number",
+            "Default": 25,
+            "MinValue": 1,
+            "MaxValue": 100,
+            "ConstraintDescription": "must be a valid number between 1 and 100, and be less than \"Scale-out threshold\".",
+            "Description": "The average CPU threshold (in percentage) for the FortiWeb Auto-Scaling group to scale-in (remove) 1 instance. Minimum is 1. Maximum is 100. Value shoule be between 1 and \"Scale-out threshold\"."
+        },
+        "FortiWebAsgScaleOutThreshold": {
+            "Type": "Number",
+            "Default": 80,
+            "MinValue": 1,
+            "MaxValue": 100,
+            "ConstraintDescription": "must be a valid number between 1 and 100, and be greater than \"Scale-in threshold\".",
+            "Description": "The average CPU threshold (in percentage) for the FortiWeb Auto-Scaling group to scale-out (add) 1 instance. Minimum is 1. Maximum is 100. Value should be between \"Scale-in threshold\" and 100."
+        },
+        "FortiWebElbTgHealthyThreshold": {
+            "Type": "Number",
+            "Default": 3,
+            "MinValue": 3,
+            "ConstraintDescription": "must be a valid number not less than 3.",
+            "Description": "The number of consecutive health check failures required before considering a FortiWeb instance unhealthy. Minimum is 3."
+        },
+        "LoadBalancingOption": {
+            "Type": "String",
+            "Default": "add a new load balancer",
+            "AllowedValues": [
+                "add a new load balancer",
+                "use a load balancer specified below"
+            ],
+            "ConstraintDescription": "must choose from the provided options.",
+            "Description": "Add an optional load balancer to route traffic to web service. You can choose your own one, but it needs to be created in the VPC above, and you need to configure its listener to point to our target group. Or we create one for you, you don't need to do any configuration."
+        },
+        "LoadBalancerDnsName": {
+            "Type": "String",
+            "Description": "(Optional) DNS Name of the Elastic Load Balancer which is used to route traffic. Specify if only you use your own one. If you choose to use your ELB, you need to configure the ELB listener to route HTTP and HTTPS traffic to the HTTP and HTTPS targetGroup we created."
+        },
+        "ElasticIPOption": {
+            "Type": "String",
+            "Default": "use an Elastic IP specified below",
+            "AllowedValues": [
+                "add a new Elastic IP",
+                "use an Elastic IP specified below"
+            ],
+            "ConstraintDescription": "must choose from the provided options.",
+            "Description": "Create new or use existing Elastic IP to manage FortiWeb. Since autoscaling may create many instances, you need to log in to FortiWeb on this IP address to manage all FortiWeb instances. You can fill in the existing Elastic IP below, or let us create a new one for you. The default action is to use an existing Elastic IP."
+        },
+        "FortiWebElasticIP": {
+            "Type": "String",
+            "Default": "fwbASG-EIP",
+            "Description": "Elastic IP address or name, through which you can manage FortiWeb. If you use an existing Elastic IP, fill it's IP address in here. If you create a new Elastic IP, give it a name so that you can find it easily in the AWS console.",
+            "AllowedPattern": "^.+$",
+            "ConstraintDescription": "must be a valid IP address format or a valid tag value."
+        },
+        "BalanceWebTrafficOverPortHTTP": {
+            "Type": "Number",
+            "Default": 80,
+            "MinValue": 1,
+            "MaxValue": 65535,
+            "ConstraintDescription": "must be a valid port number between 1 and 65535.",
+            "Description": "Receive HTTP web service traffic through this port and load balance traffic to this port of Fortiweb. Minimum is 1. Maximum is 65535."
+        },
+        "BalanceWebTrafficOverPortHTTPS": {
+            "Type": "Number",
+            "Default": 443,
+            "MinValue": 1,
+            "MaxValue": 65535,
+            "ConstraintDescription": "must be a valid port number between 1 and 65535.",
+            "Description": "Receive HTTPS web service traffic through this port and load balance traffic to this port of Fortiweb. Minimum is 1. Maximum is 65535."
+        },
+        "FortiWebAdminPort": {
+            "Type": "Number",
+            "Default": 8443,
+            "AllowedValues": [
+                8443,
+                8080
+            ],
+            "ConstraintDescription": "must be 8080 or 8443.",
+            "Description": "A port number for FortiWeb administration. Use 8080 for HTTP access and 8443 for HTTPS access."
+        },
+        "FortiWebAdminCidr": {
+            "Type": "String",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format and 0.0.0.0/0 is not recommended.",
+            "Description": "CIDR block for external admin management access. **WARNING!** 0.0.0.0/0 accepts connections from any IP address. We recommend that you use a constrained CIDR range to reduce the potential of inbound attacks from unknown IP addresses."
+        },
+        "KeyPairName": {
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must specify an admin access key pair for FortiWeb instances.",
+            "Description": "Amazon EC2 Key Pair for admin access."
+        },
+        "FortiWebAdminPassword": {
+            "Type": "String",
+            "NoEcho": true,
+            "MinLength" : "8",
+            "MaxLength": "16",
+            "AllowedPattern" : "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[$@$!%*#?&])[A-Za-z0-9$@$!%*#?&]{8,16}$",
+            "Description": "The admin password for deployed FortiWebs. The password needs to contain lowercase letters, uppercase letters, numbers, one of these special characters \"$@$!%*#?&\", and the length is between 8-16."
+        }
+    },
+    "Conditions": {
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        },
+        "AddNewElasticIPorNot": {
+            "Fn::Equals": [
+                {
+                    "Ref": "ElasticIPOption"
+                },
+                "add a new Elastic IP"
+            ]
+        }
+    },
+    "Resources": {
+        "validateParameters": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "Parameters": {
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "CustomIdentifier": {
+                        "Ref": "CustomIdentifier"
+                    },
+                    "FortiWebAsgDesiredCapacity": {
+                        "Ref": "FortiWebAsgDesiredCapacity"
+                    },
+                    "FortiWebAsgMinSize": {
+                        "Ref": "FortiWebAsgMinSize"
+                    },
+                    "FortiWebAsgMaxSize": {
+                        "Ref": "FortiWebAsgMaxSize"
+                    },
+                    "FortiWebAsgScaleInThreshold": {
+                        "Ref": "FortiWebAsgScaleInThreshold"
+                    },
+                    "FortiWebAsgScaleOutThreshold": {
+                        "Ref": "FortiWebAsgScaleOutThreshold"
+                    },
+                    "FortiWebVersionShow": {
+                        "Ref": "FortiWebVersionShow"
+                    },
+                    "AddNewElasticIPorNot": {
+                        "Fn::If" : [
+                            "AddNewElasticIPorNot",
+                            "yes",
+                            "no"
+                          ]
+                    },
+                    "FortiWebElasticIP": {
+                        "Ref": "FortiWebElasticIP"
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/validate-lambda.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "TimeoutInMinutes": "5"
+            }
+        },
+        "StackCreateNewVPC": {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn" : "validateParameters",
+            "Properties": {
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/create-new-vpc.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "TimeoutInMinutes": "5"
+            }
+        },
+        "StackDeployFwbAsgSolution": {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn" : "validateParameters",
+            "Properties": {
+                "Parameters": {
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "CustomIdentifier": {
+                        "Ref": "CustomIdentifier"
+                    },
+                    "VpcId": {
+                        "Fn::GetAtt": [
+                            "StackCreateNewVPC",
+                            "Outputs.FwbAsgVpc"
+                        ]
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "PublicSubnet1": {
+                        "Fn::GetAtt": [
+                            "StackCreateNewVPC",
+                            "Outputs.PublicSubnet1"
+                        ]
+                    },
+                    "PublicSubnet2": {
+                        "Fn::GetAtt": [
+                            "StackCreateNewVPC",
+                            "Outputs.PublicSubnet2"
+                        ]
+                    },
+                    "FortiWebVersionInternal": {
+                        "Fn::GetAtt": [
+                            "validateParameters",
+                            "Outputs.FortiWebVersionInternal"
+                        ]
+                    },
+                    "FortiWebInstanceType": {
+                        "Ref": "FortiWebInstanceType"
+                    },
+                    "ExpireLifecycleEntry": {
+                        "Ref": "ExpireLifecycleEntry"
+                    },
+                    "FortiWebAsgCooldown": {
+                        "Ref": "FortiWebAsgCooldown"
+                    },
+                    "FortiWebAsgDesiredCapacity": {
+                        "Ref": "FortiWebAsgDesiredCapacity"
+                    },
+                    "FortiWebAsgMinSize": {
+                        "Ref": "FortiWebAsgMinSize"
+                    },
+                    "FortiWebAsgMaxSize": {
+                        "Ref": "FortiWebAsgMaxSize"
+                    },
+                    "FortiWebAsgHealthCheckGracePeriod": {
+                        "Ref": "FortiWebAsgHealthCheckGracePeriod"
+                    },
+                    "FortiWebAsgScaleInThreshold": {
+                        "Ref": "FortiWebAsgScaleInThreshold"
+                    },
+                    "FortiWebAsgScaleOutThreshold": {
+                        "Ref": "FortiWebAsgScaleOutThreshold"
+                    },
+                    "FortiWebElbTgHealthyThreshold": {
+                        "Ref": "FortiWebElbTgHealthyThreshold"
+                    },
+                    "LoadBalancingOption": {
+                        "Ref": "LoadBalancingOption"
+                    },
+                    "LoadBalancerDnsName": {
+                        "Ref": "LoadBalancerDnsName"
+                    },
+                    "ElasticIPOption": {
+                        "Ref": "ElasticIPOption"
+                    },
+                    "FortiWebElasticIP": {
+                        "Ref": "FortiWebElasticIP"
+                    },
+                    "BalanceWebTrafficOverPortHTTP": {
+                        "Ref": "BalanceWebTrafficOverPortHTTP"
+                    },
+                    "BalanceWebTrafficOverPortHTTPS": {
+                        "Ref": "BalanceWebTrafficOverPortHTTPS"
+                    },
+                    "FortiWebAdminPort": {
+                        "Ref": "FortiWebAdminPort"
+                    },
+                    "FortiWebAdminCidr": {
+                        "Ref": "FortiWebAdminCidr"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "FortiWebAdminPassword": {
+                        "Ref": "FortiWebAdminPassword"
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/workload-no-validate.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "TimeoutInMinutes": "30"
+            }
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "VPCCIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "FortiWeb configuration"
+                    },
+                    "Parameters": [
+                        "CustomIdentifier",
+                        "FortiWebVersionShow",
+                        "FortiWebInstanceType",
+                        "FortiWebAdminPort",
+                        "FortiWebAdminCidr",
+                        "KeyPairName",
+                        "FortiWebAdminPassword",
+                        "ElasticIPOption",
+                        "FortiWebElasticIP"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "FortiWeb auto-scaling group configuration"
+                    },
+                    "Parameters": [
+                        "ExpireLifecycleEntry",
+                        "FortiWebAsgMinSize",
+                        "FortiWebAsgMaxSize",
+                        "FortiWebAsgDesiredCapacity",
+                        "FortiWebAsgHealthCheckGracePeriod",
+                        "FortiWebAsgCooldown",
+                        "FortiWebAsgScaleOutThreshold",
+                        "FortiWebAsgScaleInThreshold",
+                        "FortiWebElbTgHealthyThreshold"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Load balancing configuration"
+                    },
+                    "Parameters": [
+                        "LoadBalancingOption",
+                        "LoadBalancerDnsName",
+                        "BalanceWebTrafficOverPortHTTP",
+                        "BalanceWebTrafficOverPortHTTPS"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "CustomIdentifier": {
+                    "default": "Resource name prefix"
+                },
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public subnet 2 CIDR"
+                },
+                "FortiWebVersionShow": {
+                    "default": "FortiWeb version"
+                },
+                "FortiWebInstanceType": {
+                    "default": "Instance type"
+                },
+                "LambdaDeploymentMethod": {
+                    "default": "Deployment method"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 bucket name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 key prefix"
+                },
+                "ExpireLifecycleEntry": {
+                    "default": "Instance lifecycle expiry"
+                },
+                "FortiWebAsgCooldown": {
+                    "default": "Scaling cooldown period"
+                },
+                "FortiWebAsgDesiredCapacity": {
+                    "default": "Desired capacity"
+                },
+                "FortiWebAsgMinSize": {
+                    "default": "Minimum group size"
+                },
+                "FortiWebAsgMaxSize": {
+                    "default": "Maximum group size"
+                },
+                "FortiWebAsgHealthCheckGracePeriod": {
+                    "default": "Health check grace period"
+                },
+                "FortiWebAsgScaleInThreshold": {
+                    "default": "Scale-in threshold"
+                },
+                "FortiWebAsgScaleOutThreshold": {
+                    "default": "Scale-out threshold"
+                },
+                "FortiWebElbTgHealthyThreshold": {
+                    "default": "Healthy threshold"
+                },
+                "LoadBalancingOption": {
+                    "default": "Load Balancer option"
+                },
+                "LoadBalancerDnsName": {
+                    "default": "ELB DNS name"
+                },
+                "ElasticIPOption": {
+                    "default": "FortiWeb Elastic IP option"
+                },
+                "FortiWebElasticIP": {
+                    "default": "FortiWeb Elastic IP or Name"
+                },
+                "BalanceWebTrafficOverPortHTTP": {
+                    "default": "HTTP web service traffic port"
+                },
+                "BalanceWebTrafficOverPortHTTPS": {
+                    "default": "HTTPS web service traffic port"
+                },
+                "FortiWebAdminPort": {
+                    "default": "Admin port"
+                },
+                "FortiWebAdminCidr": {
+                    "default": "Admin CIDR block"
+                },
+                "KeyPairName": {
+                    "default": "Key pair name"
+                },
+                "FortiWebAdminPassword": {
+                    "default": "Admin password"
+                }
+            }
+        }
+    }
+}

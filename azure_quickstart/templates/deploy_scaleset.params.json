@@ -1,0 +1,81 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmssName": {
+      "value": "autoscalevmss"
+    },
+    "vmSku": {
+      "value": "Standard_F2"
+    },
+    "adminUsername": {
+      "value": "azureadmin"
+    },
+    "adminPassword": {
+      "value": null
+    },
+    "vnetNewOrExisting": {
+      "value": "new"
+    },
+    "vnetName": {
+      "value": "myvmssvnet"
+    },
+    "vnetResourceGroup": {
+      "value": "[resourceGroup().name]"
+    },
+    "vnetAddressPrefix": {
+      "value": "10.10.0.0/16"
+    },
+    "subnet1Name": {
+      "value": "OutsideSubnet"
+    },
+    "subnet1Prefix": {
+      "value": "10.10.0.0/24"
+    },
+    "subnet2Name": {
+      "value": "InsideSubnet"
+    },
+    "subnet2Prefix": {
+      "value": "10.10.1.0/24"
+    },
+    "capacity": {
+      "value": 1
+    },
+    "autoscaleMin": {
+      "value": 1
+    },
+    "autoscaleMax": {
+      "value": 16
+    },
+    "scaleUpCPUThreshold": {
+      "value": 75
+    },
+    "scaleUpTimeWindow": {
+      "value": 5
+    },
+    "scaleDownCPUThreshold": {
+      "value": 30
+    },
+    "scaleDownTimeWindow": {
+      "value": 5
+    },
+    "funcAppPrefix": {
+      "value": "funapp"
+    },
+    "tenantId": {
+      "value": null
+    },
+    "subscriptionId": {
+      "value": null
+    },
+    "restappId": {
+      "value": null
+    },
+    "restappSecret": {
+      "value": null
+    },
+    "heartbeatLoss": {
+      "value": 6
+    }
+  }
+}
