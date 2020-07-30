@@ -24,16 +24,14 @@ function runCmd(cmd, args = [], cwd = process.cwd(), options) {
         });
 
         cproc.stderr.on('data', function(data) {
-            if (options && !options.supressError) {
+            if (options && options.supressError) {
                 console.log(`stderr: ${data}`);
-            } else {
-                reject(data);
             }
         });
 
         cproc.on('error', err => {
-            if (options && !options.supressError) {
-                console.log(`error : ${err}`);
+            if (options && options.supressError) {
+                console.error(`error : ${err}`);
             } else {
                 reject(err);
             }
@@ -573,7 +571,7 @@ async function makeDistAll() {
     await makeDistAWS();
     await makeDistAWSLambda();
     await makeDistAzure();
-    await makeDistAzureFuncApp();
+    //ait makeDistAzureFuncApp();
     await makeDistAzureQuickStart();
     await makeDistProject();
     await makeDistAwsCloudFormation();
