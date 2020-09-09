@@ -36,11 +36,11 @@
         },
         "PublicSubnet1": {
             "Type": "AWS::EC2::Subnet::Id",
-            "Description": "Public (DMZ) subnet 1, which is located in Availability Zone 1."
+            "Description": "Subnet 1, which is located in Availability Zone 1."
         },
         "PublicSubnet2": {
             "Type": "AWS::EC2::Subnet::Id",
-            "Description": "Public (DMZ) subnet 2, which is located in Availability Zone 2."
+            "Description": "Subnet 2, which is located in Availability Zone 2."
         },
         "FortiWebVersionInternal": {
             "Type": "String",
@@ -99,27 +99,35 @@
             "ConstraintDescription": "must be a valid number between 60 and 3600.",
             "Description": "Auto-Scaling group waits for the cooldown period (in seconds) to complete before resuming scaling activities. Minimum is 60. Maximum is 3600."
         },
-        "FortiWebAsgDesiredCapacity": {
+        "FortiWebAsgCapacityBYOL": {
             "Type": "Number",
             "Default": 2,
-            "MinValue": 1,
-            "ConstraintDescription": "must be a valid number not less than 1. Value must be between \"Minimum group size\" and \"Maximum group size\".",
-            "Description": "The number of FortiWeb instances the group should have at any time, also called desired capacity. Must keep at least 1 FortiWeb in the group. Minimum is 1. Value must be between \"Minimum group size\" and \"Maximum group size\"."
+            "MinValue": 0,
+            "MaxValue": 16,
+            "ConstraintDescription": "must be a valid number not less than 0. Minimum is 0. Sum of \"Desired BYOL FortiWeb capacity\" and \"Maximum On-Demand FortiWeb group size\" should not be bigger than 16.",
+            "Description": "The number of BYOL FortiWeb instance. For specific use cases, set to 0 for On-Demand-only, and >= 1 for hybrid licensing. Please note that you need to provide an equal number of licenses. The total number of BYOL and On-Demand FortiWeb needs to be less than or equal to 16."
         },
-        "FortiWebAsgMinSize": {
+        "FortiWebAsgDesiredCapacityOnDemand": {
             "Type": "Number",
             "Default": 2,
-            "MinValue": 1,
-            "ConstraintDescription": "must be a valid number not less than 1. Value should be less than or equal to \"Desired capacity\".",
-            "Description": "Minimum number of FortiWeb instances in the Auto-Scaling Group. Minimum is 1. Value should be less than or equal to \"Desired capacity\"."
+            "MinValue": 0,
+            "ConstraintDescription": "must be a valid number not less than 0. Value must be between \"Minimum On-Demand FortiWeb group size\" and \"Maximum On-Demand FortiWeb group size\".",
+            "Description": "The initial number of On-Demand FortiWeb instance. Value must be between \"Minimum On-Demand FortiWeb group size\" and \"Maximum On-Demand FortiWeb group size\". The total number of BYOL and On-Demand FortiWeb needs to be less than or equal to 16."
         },
-        "FortiWebAsgMaxSize": {
+        "FortiWebAsgMinSizeOnDemand": {
+            "Type": "Number",
+            "Default": 2,
+            "MinValue": 0,
+            "ConstraintDescription": "must be a valid number not less than 0. Value should be less than or equal to \"Desired On-Demand FortiWeb capacity\".",
+            "Description": "Minimum number of On-Demand FortiWeb instances in the Auto-Scaling Group. Value should be less than or equal to \"Desired On-Demand FortiWeb capacity\"."
+        },
+        "FortiWebAsgMaxSizeOnDemand": {
             "Type": "Number",
             "Default": 4,
             "MinValue": 1,
             "MaxValue": 16,
-            "ConstraintDescription": "must be a valid number between 1 and 16. Value should be greater than or equal to \"Desired capacity\".",
-            "Description": "Maximum number of FortiWeb instances in the Auto-Scaling Group. Minimum is 1. Maximum is 16. Value should be greater than or equal to \"Desired capacity\"."
+            "ConstraintDescription": "must be a valid number between 1 and 16. Value should be greater than or equal to \"Desired On-Demand FortiWeb capacity\". Sum of \"Desired BYOL FortiWeb capacity\" and \"Maximum On-Demand FortiWeb group size\" should not be bigger than 16.",
+            "Description": "Maximum number of On-Demand FortiWeb instances in the Auto-Scaling Group. Maximum is 16. Value should be greater than or equal to \"Desired On-Demand FortiWeb capacity\"."
         },
         "FortiWebAsgHealthCheckGracePeriod": {
             "Type": "Number",
@@ -167,7 +175,7 @@
         },
         "ElasticIPOption": {
             "Type": "String",
-            "Default": "use an Elastic IP specified below",
+            "Default": "add a new Elastic IP",
             "AllowedValues": [
                 "add a new Elastic IP",
                 "use an Elastic IP specified below"
@@ -284,6 +292,46 @@
                     ]
                 }
             ]
+        },
+        "DeployOnDemandOnly": {
+            "Fn::Equals": [
+                {
+                    "Ref": "FortiWebAsgCapacityBYOL"
+                },
+                "0"
+            ]
+        },
+        "DeployBYOLOnly": {
+            "Fn::Equals": [
+                {
+                    "Ref": "FortiWebAsgDesiredCapacityOnDemand"
+                },
+                "0"
+            ]
+        },
+        "DeployHybrid": {
+            "Fn::And": [
+                { 
+                    "Fn::Not": [{
+                        "Fn::Equals": [
+                            {
+                                "Ref": "FortiWebAsgDesiredCapacityOnDemand"
+                            },
+                            "0"
+                        ]
+                    }]
+                },
+                {
+                    "Fn::Not": [{
+                        "Fn::Equals": [
+                            {
+                                "Ref": "FortiWebAsgCapacityBYOL"
+                            },
+                            "0"
+                        ]
+                    }]
+                }
+            ]
         }
     },
     "Mappings": {
@@ -324,9 +372,9 @@
                         }
                     ]
                 },
-                "TimeoutInMinutes": "10"
-            }
-        },
+                "TimeoutInMinutes": "5"
+             }
+         },
         "StackCreateDynamoDBTable": {
             "Type": "AWS::CloudFormation::Stack",
             "Properties": {
@@ -488,7 +536,7 @@
                 "CidrIp": "0.0.0.0/0"
             }
         },
-        "LaunchTemplateFwbAutoscale": {
+        "LaunchTemplateFwbAutoscaleOnDemand": {
             "Type": "AWS::EC2::LaunchTemplate",
             "DependsOn" : "StackFindAMI",
             "Properties": {
@@ -522,7 +570,6 @@
                     },
                     "InstanceInitiatedShutdownBehavior": "terminate",
                     "ImageId": {
-
                         "Fn::GetAtt": [
                             "StackFindAMI",
                             "Outputs.LatestOnDemandAmiId"
@@ -556,8 +603,125 @@
                     },
                     "TagSpecifications": [{
                         "ResourceType": "instance",
+                        "Tags": [{
+                            "Key": "Name", 
+                            "Value":  {
+                                "Fn::Join": [
+                                    "-",
+                                    [
+                                        {"Ref": "CustomIdentifier"},
+                                        "OnDemand"
+                                    ]
+                                ]
+                            }
+                        }]
+                    }]
+                }
+            },
+            "DependsOn": [
+                "IamInstanceProfileFwb"
+            ]
+        },
+        "LaunchTemplateFwbAutoscaleBYOL": {
+            "Type": "AWS::EC2::LaunchTemplate",
+            "Properties": {
+                "LaunchTemplateData": {
+                    "UserData": {
+                        "Fn::Base64": {
+                            "Fn::Sub": [
+                                "fwb_json_start {\"config-url\": \"${configUrl}\", \n\"initial_passwd\": \"${initial_passwd}\", \n\"cloud-initd\": \"enable\", \n\"bucket\": \"${S3Bucket}\", \n\"region\": \"${aws_region}\", \n\"license-dispather\":\"${licenseDispather}\"}",
+                                {
+                                    "configUrl": {
+                                        "Fn::Sub": [
+                                            "https://${api}.execute-api.${region}.amazonaws.com/${stage}/${resource}",
+                                            {
+                                                "region": {
+                                                    "Ref": "AWS::Region"
+                                                },
+                                                "api": {
+                                                    "Ref": "ApiGatewayFwbAsg"
+                                                },
+                                                "stage": "prod",
+                                                "resource": "complete"
+                                            }
+                                        ]
+                                    },
+                                    "initial_passwd": {
+                                        "Fn::Base64" : {"Ref": "FortiWebAdminPassword"}
+                                    },
+                                    "S3Bucket": {
+                                        "Ref": "QSS3BucketName"
+                                    },
+                                    "aws_region": {
+                                        "Ref" : "AWS::Region"
+                                    },
+                                    "licenseDispather": {
+                                        "Fn::Sub": [
+                                            "https://${api}.execute-api.${region}.amazonaws.com/${stage}/${resource}",
+                                            {
+                                                "region": {
+                                                    "Ref": "AWS::Region"
+                                                },
+                                                "api": {
+                                                    "Ref": "ApiGatewayFwbAsg"
+                                                },
+                                                "stage": "prod",
+                                                "resource": "lic_dispatcher"
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "InstanceInitiatedShutdownBehavior": "terminate",
+                    "ImageId": {
+                        "Fn::GetAtt": [
+                            "StackFindAMI",
+                            "Outputs.LatestBYOLAmiId"
+                        ]
+                    },
+                    "BlockDeviceMappings": [],
+                    "IamInstanceProfile": {
+                        "Arn": {
+                            "Fn::GetAtt": [
+                                "IamInstanceProfileFwb",
+                                "Arn"
+                            ]
+                        }
+                    },
+                    "InstanceType": {
+                        "Ref": "FortiWebInstanceType"
+                    },
+                    "NetworkInterfaces": [
+                        {
+                            "DeviceIndex": 0,
+                            "Groups": [
+                                {
+                                    "Ref": "FwbAsgSecurityGroup"
+                                }
+                            ],
+                            "AssociatePublicIpAddress": true
+                        }
+                    ],
+                    "KeyName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "TagSpecifications": [{
+                        "ResourceType": "instance",
                         "Tags": [
-                            { "Key": "Name", "Value": {"Ref": "CustomIdentifier"} }
+                            {
+                                "Key": "Name", 
+                                "Value": {
+                                    "Fn::Join": [
+                                        "-",
+                                        [
+                                            {"Ref": "CustomIdentifier"},
+                                            "BYOL"
+                                        ]
+                                    ]
+                                }
+                            }
                         ]
                     }]
                 }
@@ -566,7 +730,7 @@
                 "IamInstanceProfileFwb"
             ]
         },
-        "FortiWebScalingGroup": {
+        "FortiWebScalingGroupOnDemand": {
             "Type": "AWS::AutoScaling::AutoScalingGroup",
             "Properties": {
                 "AutoScalingGroupName": {
@@ -576,7 +740,7 @@
                             {
                                 "Ref": "CustomIdentifier"
                             },
-                            "FortiWebAutoScalingGroup",
+                            "FortiWebAutoScalingGroupOnDemand",
                             {
                                 "Fn::Select": [
                                     0,
@@ -605,7 +769,7 @@
                 },
                 "LaunchTemplate": {
                     "LaunchTemplateId": {
-                        "Ref": "LaunchTemplateFwbAutoscale"
+                        "Ref": "LaunchTemplateFwbAutoscaleOnDemand"
                     },
                     "Version": "1"
                 },
@@ -613,17 +777,17 @@
                     "Ref": "FortiWebAsgCooldown"
                 },
                 "DesiredCapacity": {
-                    "Ref": "FortiWebAsgDesiredCapacity"
+                    "Ref": "FortiWebAsgDesiredCapacityOnDemand"
                 },
                 "HealthCheckGracePeriod": {
                     "Ref": "FortiWebAsgHealthCheckGracePeriod"
                 },
                 "HealthCheckType": "EC2",
                 "MaxSize": {
-                    "Ref": "FortiWebAsgMaxSize"
+                    "Ref": "FortiWebAsgMaxSizeOnDemand"
                 },
                 "MinSize": {
-                    "Ref": "FortiWebAsgMinSize"
+                    "Ref": "FortiWebAsgMinSizeOnDemand"
                 },
                 "VPCZoneIdentifier": [
                     {
@@ -642,10 +806,96 @@
                 ]
             },
             "DependsOn": [
-                "LaunchTemplateFwbAutoscale",
+                "LaunchTemplateFwbAutoscaleOnDemand",
                 "ElbV2HTTPTargetGroupFwbAsg",
                 "ElbV2HTTPSTargetGroupFwbAsg",
-                "LambdaFunctionFwbAsg"
+                "LambdaFunctionFwbAsg",
+                "LambdaLicenseDispatcher",
+                "PemApiGwCallLambdaLic"
+            ]
+        },
+        "FortiWebScalingGroupBYOL": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AutoScalingGroupName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "CustomIdentifier"
+                            },
+                            "FortiWebAutoScalingGroupBYOL",
+                            {
+                                "Fn::Select": [
+                                    0,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Fn::Select": [
+                                                    2,
+                                                    {
+                                                        "Fn::Split": [
+                                                            "/",
+                                                            {
+                                                                "Ref": "AWS::StackId"
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    ]
+                },
+                "LaunchTemplate": {
+                    "LaunchTemplateId": {
+                        "Ref": "LaunchTemplateFwbAutoscaleBYOL"
+                    },
+                    "Version": "1"
+                },
+                "Cooldown": {
+                    "Ref": "FortiWebAsgCooldown"
+                },
+                "DesiredCapacity": {
+                    "Ref": "FortiWebAsgCapacityBYOL"
+                },
+                "HealthCheckGracePeriod": {
+                    "Ref": "FortiWebAsgHealthCheckGracePeriod"
+                },
+                "HealthCheckType": "EC2",
+                "MaxSize": {
+                    "Ref": "FortiWebAsgCapacityBYOL"
+                },
+                "MinSize": {
+                    "Ref": "FortiWebAsgCapacityBYOL"
+                },
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "PublicSubnet1"
+                    },
+                    {
+                        "Ref": "PublicSubnet2"
+                    }
+                ],
+                "TerminationPolicies": [
+                    "Default"
+                ],
+                "TargetGroupARNs": [
+                    { "Ref": "ElbV2HTTPSTargetGroupFwbAsg" },
+                    { "Ref": "ElbV2HTTPTargetGroupFwbAsg" }
+                ]
+            },
+            "DependsOn": [
+                "LaunchTemplateFwbAutoscaleOnDemand",
+                "ElbV2HTTPTargetGroupFwbAsg",
+                "ElbV2HTTPSTargetGroupFwbAsg",
+                "LambdaFunctionFwbAsg",
+                "LambdaLicenseDispatcher",
+                "PemApiGwCallLambdaLic"
             ]
         },
         "AsgScaleInPolicy": {
@@ -653,12 +903,12 @@
             "Properties": {
                 "AdjustmentType": "ChangeInCapacity",
                 "AutoScalingGroupName": {
-                    "Ref": "FortiWebScalingGroup"
+                    "Ref": "FortiWebScalingGroupOnDemand"
                 },
                 "ScalingAdjustment": "-1"
             },
             "DependsOn": [
-                "FortiWebScalingGroup"
+                "FortiWebScalingGroupOnDemand"
             ]
         },
         "ScaleOutPolicy": {
@@ -666,12 +916,12 @@
             "Properties": {
                 "AdjustmentType": "ChangeInCapacity",
                 "AutoScalingGroupName": {
-                    "Ref": "FortiWebScalingGroup"
+                    "Ref": "FortiWebScalingGroupOnDemand"
                 },
                 "ScalingAdjustment": "1"
             },
             "DependsOn": [
-                "FortiWebScalingGroup"
+                "FortiWebScalingGroupOnDemand"
             ]
         },
         "AlarmCpuUtilHigh": {
@@ -694,10 +944,21 @@
                 "Namespace": "AWS/EC2",
                 "Dimensions": [
                     {
-                        "Name": "AutoScalingGroupName",
-                        "Value": {
-                            "Ref": "FortiWebScalingGroup"
-                        }
+                        "Fn::If": [
+                            "DeployOnDemandOnly",
+                            {
+                                "Name": "AutoScalingGroupName",
+                                "Value": {
+                                    "Ref": "FortiWebScalingGroupOnDemand"
+                                }
+                            },
+                            {
+                                "Name": "AutoScalingGroupName",
+                                "Value": {
+                                    "Ref": "FortiWebScalingGroupBYOL"
+                                }                            
+                            }
+                        ]
                     }
                 ],
                 "ComparisonOperator": "GreaterThanThreshold",
@@ -724,10 +985,21 @@
                 "Namespace": "AWS/EC2",
                 "Dimensions": [
                     {
-                        "Name": "AutoScalingGroupName",
-                        "Value": {
-                            "Ref": "FortiWebScalingGroup"
-                        }
+                        "Fn::If": [
+                            "DeployOnDemandOnly",
+                            {
+                                "Name": "AutoScalingGroupName",
+                                "Value": {
+                                    "Ref": "FortiWebScalingGroupOnDemand"
+                                }
+                            },
+                            {
+                                "Name": "AutoScalingGroupName",
+                                "Value": {
+                                    "Ref": "FortiWebScalingGroupBYOL"
+                                }                            
+                            }
+                        ]
                     }
                 ],
                 "ComparisonOperator": "LessThanThreshold",
@@ -744,7 +1016,7 @@
                             {
                                 "Ref": "CustomIdentifier"
                             },
-                            "lfFwb",
+                            "FwbAsg",
                             {
                                 "Fn::Select": [
                                     0,
@@ -830,7 +1102,41 @@
                                     {
                                         "Ref": "CustomIdentifier"
                                     },
-                                    "FortiWebAutoScalingGroup",
+                                    "FortiWebAutoScalingGroupOnDemand",
+                                    {
+                                        "Fn::Select": [
+                                            0,
+                                            {
+                                                "Fn::Split": [
+                                                    "-",
+                                                    {
+                                                        "Fn::Select": [
+                                                            2,
+                                                            {
+                                                                "Fn::Split": [
+                                                                    "/",
+                                                                    {
+                                                                        "Ref": "AWS::StackId"
+                                                                    }
+                                                                ]
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            ]
+                        },
+                        "AUTO_SCALING_GROUP_NAME_BYOL": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "CustomIdentifier"
+                                    },
+                                    "FortiWebAutoScalingGroupBYOL",
                                     {
                                         "Fn::Select": [
                                             0,
@@ -917,7 +1223,8 @@
         },
         "ApiGwDeploymentFwbAsg": {
             "DependsOn": [
-                "ApiGwMethodFwbAsgComplete"
+                "ApiGwMethodFwbAsgComplete",
+                "ApiGwMethodFwbLicDispatcher"
             ],
             "Type": "AWS::ApiGateway::Deployment",
             "Properties": {
@@ -1039,6 +1346,57 @@
                 }
             }
         },
+        "ApiGwResFwbLicDispatcher": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "RestApiId": {
+                    "Ref": "ApiGatewayFwbAsg"
+                },
+                "PathPart": "lic_dispatcher",
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "ApiGatewayFwbAsg",
+                        "RootResourceId"
+                    ]
+                }
+            }
+        },
+        "ApiGwMethodFwbLicDispatcher": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ResourceId": {
+                    "Ref": "ApiGwResFwbLicDispatcher"
+                },
+                "RestApiId": {
+                    "Ref": "ApiGatewayFwbAsg"
+                },
+                "AuthorizationType": "NONE",
+                "HttpMethod": "POST",
+                "Integration": {
+                    "Type": "AWS_PROXY",
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":lambda:path/2015-03-31/functions/",
+                                {
+                                    "Fn::GetAtt": [
+                                        "LambdaLicenseDispatcher",
+                                        "Arn"
+                                    ]
+                                },
+                                "/invocations"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
         "IamRoleLfFwbAsg": {
             "Type": "AWS::IAM::Role",
             "Properties": {
@@ -1117,7 +1475,62 @@
                                                             {
                                                                 "Ref": "CustomIdentifier"
                                                             },
-                                                            "FortiWebAutoScalingGroup",
+                                                            "FortiWebAutoScalingGroupOnDemand",
+                                                            {
+                                                                "Fn::Select": [
+                                                                    0,
+                                                                    {
+                                                                        "Fn::Split": [
+                                                                            "-",
+                                                                            {
+                                                                                "Fn::Select": [
+                                                                                    2,
+                                                                                    {
+                                                                                        "Fn::Split": [
+                                                                                            "/",
+                                                                                            {
+                                                                                                "Ref": "AWS::StackId"
+                                                                                            }
+                                                                                        ]
+                                                                                    }
+                                                                                ]
+                                                                            }
+                                                                        ]
+                                                                    }
+                                                                ]
+                                                            }
+                                                        ]
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "autoscaling:CompleteLifecycleAction",
+                                        "autoscaling:SetDesiredCapacity",
+                                        "autoscaling:SetInstanceProtection"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": [
+                                            "arn:aws:autoscaling:${AWS_REGION}:${AWS_ACCOUNT_ID}:autoScalingGroup:*:autoScalingGroupName/${ASG_NAME}",
+                                            {
+                                                "AWS_REGION": {
+                                                    "Ref": "AWS::Region"
+                                                },
+                                                "AWS_ACCOUNT_ID": {
+                                                    "Ref": "AWS::AccountId"
+                                                },
+                                                "ASG_NAME": {
+                                                    "Fn::Join": [
+                                                        "-",
+                                                        [
+                                                            {
+                                                                "Ref": "CustomIdentifier"
+                                                            },
+                                                            "FortiWebAutoScalingGroupBYOL",
                                                             {
                                                                 "Fn::Select": [
                                                                     0,
@@ -1228,7 +1641,7 @@
                                         {
                                             "Ref": "CustomIdentifier"
                                         },
-                                        "FortiWebAutoScalingGroup",
+                                        "FortiWebAutoScalingGroupOnDemand",
                                         {
                                             "Fn::Select": [
                                                 0,
@@ -1273,7 +1686,7 @@
                 ]
             }
         },
-        "LpAsgLifecyclePermission": {
+        "PemAsgLifecycleCallLambda": {
             "Type": "AWS::Lambda::Permission",
             "Properties": {
                 "FunctionName": {
@@ -1289,7 +1702,7 @@
                 }
             }
         },
-        "LpAsgComplete": {
+        "PemApiGwCallLambdaAsg": {
             "Type": "AWS::Lambda::Permission",
             "Properties": {
                 "FunctionName": {
@@ -1325,12 +1738,48 @@
                 "LambdaFunctionFwbAsg"
             ]
         },
+        "PemApiGwCallLambdaLic": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::GetAtt": [
+                        "LambdaLicenseDispatcher",
+                        "Arn"
+                    ]
+                },
+                "Action": "lambda:InvokeFunction",
+                "Principal": "apigateway.amazonaws.com",
+                "SourceArn": {
+                    "Fn::Sub": [
+                        "arn:aws:execute-api:${region}:${account}:${api}/*",
+                        {
+                            "region": {
+                                "Ref": "AWS::Region"
+                            },
+                            "account": {
+                                "Ref": "AWS::AccountId"
+                            },
+                            "api": {
+                                "Ref": "ApiGatewayFwbAsg"
+                            }
+                        }
+                    ]
+                }
+            },
+            "DependsOn": [
+                "ApiGatewayFwbAsg",
+                "ApiGwDeploymentFwbAsg",
+                "ApiGwResFwbLicDispatcher",
+                "ApiGwMethodFwbLicDispatcher",
+                "LambdaLicenseDispatcher"
+            ]
+        },
         "AsgLifeCycleHookLaunching": {
             "DependsOn": "LambdaFunctionFwbAsg",
             "Type": "AWS::AutoScaling::LifecycleHook",
             "Properties": {
                 "AutoScalingGroupName": {
-                    "Ref": "FortiWebScalingGroup"
+                    "Ref": "FortiWebScalingGroupOnDemand"
                 },
                 "LifecycleHookName": "asgFwbAutoscaleLifecycleLaunching",
                 "LifecycleTransition": "autoscaling:EC2_INSTANCE_LAUNCHING",
@@ -1345,7 +1794,7 @@
             "Type": "AWS::AutoScaling::LifecycleHook",
             "Properties": {
                 "AutoScalingGroupName": {
-                    "Ref": "FortiWebScalingGroup"
+                    "Ref": "FortiWebScalingGroupOnDemand"
                 },
                 "LifecycleHookName": "asgFwbAutoscaleLifecycleHookTerminating",
                 "LifecycleTransition": "autoscaling:EC2_INSTANCE_TERMINATING",
@@ -1575,6 +2024,142 @@
                 "ElbV2LoadBalancerFwbAsg",
                 "ElbV2HTTPSTargetGroupFwbAsg"
             ]
+        },
+        "LambdaLicenseDispatcher": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "CustomIdentifier"
+                            },
+                            "FwblicDispather",
+                            {
+                                "Fn::Select": [
+                                    0,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Fn::Select": [
+                                                    2,
+                                                    {
+                                                        "Fn::Split": [
+                                                            "/",
+                                                            {
+                                                                "Ref": "AWS::StackId"
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    ]
+                },
+                "Runtime": "python3.6",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "IamRoleLfFwbAsg",
+                        "Arn"
+                    ]
+                },
+                "Handler": "handler.lambda_handler",
+                "Timeout": 300,
+                "Code": {
+                    "S3Bucket": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "S3Key": {
+                        "Fn::Sub": [
+                            "${QSS3KeyPrefix}functions/packages/lic_lambda.zip",
+                            {
+                                "QSS3KeyPrefix": {
+                                    "Ref": "QSS3KeyPrefix"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "Environment": {
+                    "Variables": {
+                        "UNIQUE_ID": {
+                            "Fn::Select": [
+                                0,
+                                {
+                                    "Fn::Split": [
+                                        "-",
+                                        {
+                                            "Fn::Select": [
+                                                2,
+                                                {
+                                                    "Fn::Split": [
+                                                        "/",
+                                                        {
+                                                            "Ref": "AWS::StackId"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        "CUSTOM_ID": {
+                            "Ref": "CustomIdentifier"
+                        },
+                        "S3Bucket": {
+                            "Ref": "QSS3BucketName"
+                        },
+                        "S3Prefix": {
+                            "Ref": "QSS3KeyPrefix"
+                        },
+                        "BYOL_ASG_NAME": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "CustomIdentifier"
+                                    },
+                                    "FortiWebAutoScalingGroupBYOL",
+                                    {
+                                        "Fn::Select": [
+                                            0,
+                                            {
+                                                "Fn::Split": [
+                                                    "-",
+                                                    {
+                                                        "Fn::Select": [
+                                                            2,
+                                                            {
+                                                                "Fn::Split": [
+                                                                    "/",
+                                                                    {
+                                                                        "Ref": "AWS::StackId"
+                                                                    }
+                                                                ]
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                }
+            },
+            "DependsOn": [
+                "StackCreateDynamoDBTable"
+            ]
         }
     },
     "Metadata": {
@@ -1612,10 +2197,11 @@
                         "default": "FortiWeb auto-scaling group configuration"
                     },
                     "Parameters": [
+                        "FortiWebAsgCapacityBYOL",
                         "ExpireLifecycleEntry",
-                        "FortiWebAsgMinSize",
-                        "FortiWebAsgMaxSize",
-                        "FortiWebAsgDesiredCapacity",
+                        "FortiWebAsgMinSizeOnDemand",
+                        "FortiWebAsgMaxSizeOnDemand",
+                        "FortiWebAsgDesiredCapacityOnDemand",
                         "FortiWebAsgHealthCheckGracePeriod",
                         "FortiWebAsgCooldown",
                         "FortiWebAsgScaleOutThreshold",
@@ -1672,14 +2258,17 @@
                 "FortiWebAsgCooldown": {
                     "default": "Scaling cooldown period"
                 },
-                "FortiWebAsgDesiredCapacity": {
-                    "default": "Desired capacity"
+                "FortiWebAsgCapacityBYOL": {
+                    "default": "Desired BYOL FortiWeb capacity"
                 },
-                "FortiWebAsgMinSize": {
-                    "default": "Minimum group size"
+                "FortiWebAsgDesiredCapacityOnDemand": {
+                    "default": "Desired On-Demand FortiWeb capacity"
                 },
-                "FortiWebAsgMaxSize": {
-                    "default": "Maximum group size"
+                "FortiWebAsgMinSizeOnDemand": {
+                    "default": "Minimum On-Demand FortiWeb group size"
+                },
+                "FortiWebAsgMaxSizeOnDemand": {
+                    "default": "Maximum On-Demand FortiWeb group size"
                 },
                 "FortiWebAsgHealthCheckGracePeriod": {
                     "default": "Health check grace period"

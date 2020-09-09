@@ -123,6 +123,41 @@
                     ]
                 }
             }
+        },
+        "DdbTableLicRecord": {
+            "Type": "AWS::DynamoDB::Table",
+            "Properties": {
+                "AttributeDefinitions": [
+                    {
+                        "AttributeName": "assigned_records",
+                        "AttributeType": "S"
+                    }
+                ],
+                "KeySchema": [
+                    {
+                        "AttributeName": "assigned_records",
+                        "KeyType": "HASH"
+                    }
+                ],
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": "1",
+                    "WriteCapacityUnits": "1"
+                },
+                "TableName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "CustomIdentifier"
+                            },
+                            "FortiWebLic",
+                            {
+                                "Ref": "UniqueId"
+                            }
+                        ]
+                    ]
+                }
+            }
         }
     },
     "Outputs": {
@@ -147,6 +182,12 @@
                         {
                             "Fn::GetAtt": [
                                 "DdbTableHeartBeat",
+                                "Arn"
+                            ]
+                        },
+                        {
+                            "Fn::GetAtt": [
+                                "DdbTableLicRecord",
                                 "Arn"
                             ]
                         }

@@ -18,6 +18,14 @@
         "OnDemandAMIName": {
             "Type": "String",
             "Default": ""
+        },
+        "BYOLNeeded": {
+            "Type": "String",
+            "Default": "y"
+        },
+        "OnDemandNeeded": {
+            "Type": "String",
+            "Default": "y"
         }
     },
     "Resources": {

@@ -24,14 +24,16 @@ function runCmd(cmd, args = [], cwd = process.cwd(), options) {
         });
 
         cproc.stderr.on('data', function(data) {
-            if (options && options.supressError) {
+            if (options && !options.supressError) {
                 console.log(`stderr: ${data}`);
+            } else {
+                reject(data);
             }
         });
 
         cproc.on('error', err => {
-            if (options && options.supressError) {
-                console.error(`error : ${err}`);
+            if (options && !options.supressError) {
+                console.log(`error : ${err}`);
             } else {
                 reject(err);
             }
@@ -380,6 +382,7 @@ async function makeDistAwsCloudFormation(options = {excludeList: [], quickstart:
     let lambdaTempDir = await makeDistAWSLambda({saveToDist: 'none', keepTemp: true}),
         rTempDir = await makeTempDir(), // create temp folder
         rTempDirCloudFormation = path.resolve(rTempDir, 'aws_cloudformation'),
+        rTempDirLicense = path.resolve(rTempDirCloudFormation, 'license'),
         rTempDirFunctionPackages = path.resolve(rTempDirCloudFormation, 'functions/packages'),
         rTempDirFunctionSources = path.resolve(rTempDirCloudFormation, 'functions/source'),
         rDirSrcCloudFormation = path.resolve(REAL_PROJECT_ROOT, './aws_cloudformation'),
@@ -394,6 +397,11 @@ async function makeDistAwsCloudFormation(options = {excludeList: [], quickstart:
         rDirSrcFindAMILambda = path.resolve(REAL_PROJECT_ROOT, './aws_python_lambda/find_ami.py'),
         FindAMILambdaZipFilePath;
 
+    let rTempDirSrcPythonLambda = path.resolve(rTempDir, 'aws_python_lambda'),
+        rDirSrcPythonLambda = path.resolve(REAL_PROJECT_ROOT, './aws_python_lambda/license/handler.py'),
+        PythonLambdaZipFilePath;
+
+
     let excludeList = ['local*', '.gitignore', 'autoscale_params.txt'];
     if (Array.isArray(options.excludeList)) {
         excludeList = excludeList.concat(options.excludeList);
@@ -405,6 +413,8 @@ async function makeDistAwsCloudFormation(options = {excludeList: [], quickstart:
     // copy aws cloud formation to temp dir
     await copyAndDelete(rDirSrcCloudFormation, rTempDirCloudFormation,
         excludeList);
+
+    await makeDir(rTempDirLicense);
 
     // create /functions/packages folder
     await makeDir(rTempDirFunctionPackages);
@@ -421,6 +431,12 @@ async function makeDistAwsCloudFormation(options = {excludeList: [], quickstart:
     await copy(rDirSrcValidateLambda, rTempDirSrcValidateLambda);
     validateLambdaZipFilePath = await zipSafe('validate_lambda.zip', rTempDirSrcValidateLambda);
     await moveSafe(validateLambdaZipFilePath, rTempDirFunctionPackages);
+
+    //copy and move python lambda
+    await makeDir(rTempDirSrcPythonLambda);
+    await copy(rDirSrcPythonLambda, rTempDirSrcPythonLambda);
+    PythonLambdaZipFilePath = await zipSafe('lic_lambda.zip', rTempDirSrcPythonLambda);
+    await moveSafe(PythonLambdaZipFilePath, rTempDirFunctionPackages);
 
     //copy and move find ami lambda
     await makeDir(rTempDirSrcFindAMILambda);
@@ -571,7 +587,7 @@ async function makeDistAll() {
     await makeDistAWS();
     await makeDistAWSLambda();
     await makeDistAzure();
-    //ait makeDistAzureFuncApp();
+    await makeDistAzureFuncApp();
     await makeDistAzureQuickStart();
     await makeDistProject();
     await makeDistAwsCloudFormation();

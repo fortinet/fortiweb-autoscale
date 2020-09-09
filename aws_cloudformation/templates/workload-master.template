@@ -106,27 +106,35 @@
             "ConstraintDescription": "must be a valid number between 60 and 3600.",
             "Description": "Auto-Scaling group waits for the cooldown period (in seconds) to complete before resuming scaling activities. Minimum is 60. Maximum is 3600."
         },
-        "FortiWebAsgDesiredCapacity": {
+        "FortiWebAsgCapacityBYOL": {
             "Type": "Number",
             "Default": 2,
-            "MinValue": 1,
-            "ConstraintDescription": "must be a valid number not less than 1. Value must be between \"Minimum group size\" and \"Maximum group size\".",
-            "Description": "The number of FortiWeb instances the group should have at any time, also called desired capacity. Must keep at least 1 FortiWeb in the group. Minimum is 1. Value must be between \"Minimum group size\" and \"Maximum group size\"."
+            "MinValue": 0,
+            "MaxValue": 16,
+            "ConstraintDescription": "must be a valid number not less than 0. Minimum is 0. Sum of \"Desired BYOL FortiWeb capacity\" and \"Maximum On-Demand FortiWeb group size\" should not be bigger than 16.",
+            "Description": "The number of BYOL FortiWeb instance. For specific use cases, set to 0 for On-Demand-only, and >= 1 for hybrid licensing. Please note that you need to provide an equal number of licenses. The total number of BYOL and On-Demand FortiWeb needs to be less than or equal to 16."
         },
-        "FortiWebAsgMinSize": {
+        "FortiWebAsgDesiredCapacityOnDemand": {
             "Type": "Number",
             "Default": 2,
-            "MinValue": 1,
-            "ConstraintDescription": "must be a valid number not less than 1. Value should be less than or equal to \"Desired capacity\".",
-            "Description": "Minimum number of FortiWeb instances in the Auto-Scaling Group. Minimum is 1. Value should be less than or equal to \"Desired capacity\"."
+            "MinValue": 0,
+            "ConstraintDescription": "must be a valid number not less than 0. Value must be between \"Minimum On-Demand FortiWeb group size\" and \"Maximum On-Demand FortiWeb group size\".",
+            "Description": "The initial number of On-Demand FortiWeb instance. Value must be between \"Minimum On-Demand FortiWeb group size\" and \"Maximum On-Demand FortiWeb group size\". The total number of BYOL and On-Demand FortiWeb needs to be less than or equal to 16."
         },
-        "FortiWebAsgMaxSize": {
+        "FortiWebAsgMinSizeOnDemand": {
+            "Type": "Number",
+            "Default": 2,
+            "MinValue": 0,
+            "ConstraintDescription": "must be a valid number not less than 0. Value should be less than or equal to \"Desired On-Demand FortiWeb capacity\".",
+            "Description": "Minimum number of On-Demand FortiWeb instances in the Auto-Scaling Group. Value should be less than or equal to \"Desired On-Demand FortiWeb capacity\"."
+        },
+        "FortiWebAsgMaxSizeOnDemand": {
             "Type": "Number",
             "Default": 4,
             "MinValue": 1,
             "MaxValue": 16,
-            "ConstraintDescription": "must be a valid number between 1 and 16. Value should be greater than or equal to \"Desired capacity\".",
-            "Description": "Maximum number of FortiWeb instances in the Auto-Scaling Group. Minimum is 1. Maximum is 16. Value should be greater than or equal to \"Desired capacity\"."
+            "ConstraintDescription": "must be a valid number between 1 and 16. Value should be greater than or equal to \"Desired On-Demand FortiWeb capacity\". Sum of \"Desired BYOL FortiWeb capacity\" and \"Maximum On-Demand FortiWeb group size\" should not be bigger than 16.",
+            "Description": "Maximum number of On-Demand FortiWeb instances in the Auto-Scaling Group. Maximum is 16. Value should be greater than or equal to \"Desired On-Demand FortiWeb capacity\"."
         },
         "FortiWebAsgHealthCheckGracePeriod": {
             "Type": "Number",
@@ -174,7 +182,7 @@
         },
         "ElasticIPOption": {
             "Type": "String",
-            "Default": "use an Elastic IP specified below",
+            "Default": "add a new Elastic IP",
             "AllowedValues": [
                 "add a new Elastic IP",
                 "use an Elastic IP specified below"
@@ -267,14 +275,17 @@
                     "CustomIdentifier": {
                         "Ref": "CustomIdentifier"
                     },
-                    "FortiWebAsgDesiredCapacity": {
-                        "Ref": "FortiWebAsgDesiredCapacity"
+                    "FortiWebAsgCapacityBYOL": {
+                        "Ref": "FortiWebAsgCapacityBYOL"
                     },
-                    "FortiWebAsgMinSize": {
-                        "Ref": "FortiWebAsgMinSize"
+                    "FortiWebAsgDesiredCapacityOnDemand": {
+                        "Ref": "FortiWebAsgDesiredCapacityOnDemand"
                     },
-                    "FortiWebAsgMaxSize": {
-                        "Ref": "FortiWebAsgMaxSize"
+                    "FortiWebAsgMinSizeOnDemand": {
+                        "Ref": "FortiWebAsgMinSizeOnDemand"
+                    },
+                    "FortiWebAsgMaxSizeOnDemand": {
+                        "Ref": "FortiWebAsgMaxSizeOnDemand"
                     },
                     "FortiWebAsgScaleInThreshold": {
                         "Ref": "FortiWebAsgScaleInThreshold"
@@ -403,14 +414,17 @@
                     "FortiWebAsgCooldown": {
                         "Ref": "FortiWebAsgCooldown"
                     },
-                    "FortiWebAsgDesiredCapacity": {
-                        "Ref": "FortiWebAsgDesiredCapacity"
+                    "FortiWebAsgCapacityBYOL": {
+                        "Ref": "FortiWebAsgCapacityBYOL"
                     },
-                    "FortiWebAsgMinSize": {
-                        "Ref": "FortiWebAsgMinSize"
+                    "FortiWebAsgDesiredCapacityOnDemand": {
+                        "Ref": "FortiWebAsgDesiredCapacityOnDemand"
                     },
-                    "FortiWebAsgMaxSize": {
-                        "Ref": "FortiWebAsgMaxSize"
+                    "FortiWebAsgMinSizeOnDemand": {
+                        "Ref": "FortiWebAsgMinSizeOnDemand"
+                    },
+                    "FortiWebAsgMaxSizeOnDemand": {
+                        "Ref": "FortiWebAsgMaxSizeOnDemand"
                     },
                     "FortiWebAsgHealthCheckGracePeriod": {
                         "Ref": "FortiWebAsgHealthCheckGracePeriod"
@@ -508,10 +522,11 @@
                         "default": "FortiWeb auto-scaling group configuration"
                     },
                     "Parameters": [
+                        "FortiWebAsgCapacityBYOL",
                         "ExpireLifecycleEntry",
-                        "FortiWebAsgMinSize",
-                        "FortiWebAsgMaxSize",
-                        "FortiWebAsgDesiredCapacity",
+                        "FortiWebAsgMinSizeOnDemand",
+                        "FortiWebAsgMaxSizeOnDemand",
+                        "FortiWebAsgDesiredCapacityOnDemand",
                         "FortiWebAsgHealthCheckGracePeriod",
                         "FortiWebAsgCooldown",
                         "FortiWebAsgScaleOutThreshold",
@@ -562,9 +577,6 @@
                 "FortiWebInstanceType": {
                     "default": "Instance type"
                 },
-                "LambdaDeploymentMethod": {
-                    "default": "Deployment method"
-                },
                 "QSS3BucketName": {
                     "default": "Quick Start S3 bucket name"
                 },
@@ -577,14 +589,17 @@
                 "FortiWebAsgCooldown": {
                     "default": "Scaling cooldown period"
                 },
-                "FortiWebAsgDesiredCapacity": {
-                    "default": "Desired capacity"
+                "FortiWebAsgCapacityBYOL": {
+                    "default": "Desired BYOL FortiWeb capacity"
                 },
-                "FortiWebAsgMinSize": {
-                    "default": "Minimum group size"
+                "FortiWebAsgDesiredCapacityOnDemand": {
+                    "default": "Desired On-Demand FortiWeb capacity"
                 },
-                "FortiWebAsgMaxSize": {
-                    "default": "Maximum group size"
+                "FortiWebAsgMinSizeOnDemand": {
+                    "default": "Minimum On-Demand FortiWeb group size"
+                },
+                "FortiWebAsgMaxSizeOnDemand": {
+                    "default": "Maximum On-Demand FortiWeb group size"
                 },
                 "FortiWebAsgHealthCheckGracePeriod": {
                     "default": "Health check grace period"

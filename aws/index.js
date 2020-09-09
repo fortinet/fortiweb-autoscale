@@ -177,21 +177,17 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
         return AutoScaleCore.LifecycleItem.fromDb(item);
     }
 
-    async getInServiceLifecycleItems() {
+    //BYOL has no lifecycle, so we use application level in-service proof
+    async getInServiceItems() {
         let response = await docClient.scan({
-            TableName: DB.LIFECYCLETABLE.TableName
+            TableName: DB.HEARTBEAT.TableName
         }).promise();
         let items = response.Items;
         if (!(items && items.length)) {
             logger.log('there no in service item');
             return null;
         }
-        let retItems = [];
-        items.forEach(item => {
-            let item1 = AutoScaleCore.LifecycleItem.fromDb(item);
-            retItems.push(item1);
-        });
-        return retItems;
+        return items;
     }
 
     async updateCreateLifecycleItem(item, failWhenExists = false) {
@@ -391,15 +387,19 @@ class AwsAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
     async instance_in_manager_group(instanceId) {
         var params = {
             AutoScalingGroupNames: [
-                process.env.AUTO_SCALING_GROUP_NAME
+                process.env.AUTO_SCALING_GROUP_NAME,
+                process.env.AUTO_SCALING_GROUP_NAME_BYOL
             ]
         };
         let data = await autoScaling.describeAutoScalingGroups(params).promise();
-        let all_instances = data.AutoScalingGroups[0].Instances;
         let instance_ids = [];
-        all_instances.forEach(instance => {
-            instance_ids.push(instance.InstanceId);
+
+        data.AutoScalingGroups.forEach(asg_resp => {
+            asg_resp.Instances.forEach(instance => {
+                instance_ids.push(instance.InstanceId);
+            });
         });
+
         logger.log(`in manager group instances: ${JSON.stringify(instance_ids)}`);
         if (instance_ids.includes(instanceId)) {
             return true;
@@ -541,7 +541,7 @@ class AwsAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
         let healthyInstances = [],
             awaitAll = [],
             bornTimesInstances = [];
-        let items = await this.platform.getInServiceLifecycleItems();
+        let items = await this.platform.getInServiceItems();
         if (!items) {
             logger.error('electNewMaster() called, but no instance in service. should not happen!');
             return false;
@@ -620,7 +620,7 @@ class AwsAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
         };
         const result = await ec2.describeAddresses(params).promise();
         if (!(result.Addresses && result.Addresses[0].AllocationId)) {
-            logger.log('can not get association of' + 
+            logger.log('can not get association of' +
                   `elasticIP(${elasticIP}),result is: ${JSON.stringify(result)}`);
             return
         }
@@ -659,6 +659,7 @@ class AwsAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             if (!masterRecord) {
                 logger.log('no master record, elect new master');
                 await this.electNewMaster(callerInstanceId);
+                await AutoScaleCore.sleep(100);
                 continue;
             }
             if (masterRecord && masterRecord.voteState !== 'done') {
@@ -721,7 +722,7 @@ class AwsAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
                         'no-usefull-detail-in-successful-event'),
             result = await this.platform.updateCreateLifecycleItem(item);
         logger.log(`Fortiweb (instance id: ${instanceId}) launch successfully, ` +
-            `lifecyclehook(${event.detail.LifecycleActionToken}), 
+            `lifecyclehook(${event.detail.LifecycleActionToken}),
              result: ${JSON.stringify(result)}`);
         return result;
     }

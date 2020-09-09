@@ -11,13 +11,16 @@
         "CustomIdentifier": {
             "Type": "String"
         },
-        "FortiWebAsgDesiredCapacity": {
+        "FortiWebAsgCapacityBYOL": {
             "Type": "Number"
         },
-        "FortiWebAsgMinSize": {
+        "FortiWebAsgDesiredCapacityOnDemand": {
             "Type": "Number"
         },
-        "FortiWebAsgMaxSize": {
+        "FortiWebAsgMinSizeOnDemand": {
+            "Type": "Number"
+        },
+        "FortiWebAsgMaxSizeOnDemand": {
             "Type": "Number"
         },
         "FortiWebAsgScaleInThreshold": {
@@ -45,14 +48,17 @@
                         "Arn"
                     ]
                 },
-                "FortiWebAsgDesiredCapacity": {
-                    "Ref": "FortiWebAsgDesiredCapacity"
+                "FortiWebAsgCapacityBYOL": {
+                    "Ref": "FortiWebAsgCapacityBYOL"
                 },
-                "FortiWebAsgMinSize": {
-                    "Ref": "FortiWebAsgMinSize"
+                "FortiWebAsgDesiredCapacityOnDemand": {
+                    "Ref": "FortiWebAsgDesiredCapacityOnDemand"
                 },
-                "FortiWebAsgMaxSize": {
-                    "Ref": "FortiWebAsgMaxSize"
+                "FortiWebAsgMinSizeOnDemand": {
+                    "Ref": "FortiWebAsgMinSizeOnDemand"
+                },
+                "FortiWebAsgMaxSizeOnDemand": {
+                    "Ref": "FortiWebAsgMaxSizeOnDemand"
                 },
                 "FortiWebAsgScaleInThreshold": {
                     "Ref": "FortiWebAsgScaleInThreshold"
@@ -81,7 +87,7 @@
                             {
                                 "Ref": "CustomIdentifier"
                             },
-                            "lfFwb",
+                            "validateParam",
                             {
                                 "Fn::Select": [
                                     0,

@@ -32,7 +32,7 @@ Deployment packages as well as source code will be available in the **dist** dir
 | fortiweb-autoscale-azure-quickstart.zip | Azure template. Use this to deploy the solution on the Azure platform.|
 
 Installation Guides is available from the Fortinet Document Library:
-  * [ FortiWeb / Deploying auto scaling on AWS](https://docs.fortinet.com/vm/aws/fortiweb/)
+  * [ FortiWeb / Deploying Auto Scaling on AWS](https://docs.fortinet.com/vm/aws/fortiweb/)
   * [ FortiWeb / Deploying Auto Scaling on Microsoft Azure](https://docs.fortinet.com/vm/azure/fortiweb)
 
 # Support

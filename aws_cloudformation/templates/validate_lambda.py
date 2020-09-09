@@ -1,7 +1,7 @@
 import json,logging,threading,boto3
 from botocore.vendored import requests
 import re
- 
+
 CFN_SUCCESS = "SUCCESS"
 CFN_FAILED = "FAILED"
 
@@ -19,7 +19,7 @@ def cfn_send(evt, context, responseStatus, respData, reason=''):
     respBody['LogicalResourceId'] = evt['LogicalResourceId']
     respBody['NoEcho'] = None
     respBody['Data'] = respData
-   
+
     json_respBody = json.dumps(respBody)
     print("Response body:\n" + json_respBody)
     headers = {'content-type' : '', 'content-length' : str(len(json_respBody)) }
@@ -27,17 +27,23 @@ def cfn_send(evt, context, responseStatus, respData, reason=''):
         response = requests.put(respUrl,data=json_respBody,headers=headers)
         print("Status code: " + response.reason)
     except Exception as e:
-        print("send(..) failed executing requests.put(..): " + str(e))
+        print("failed executing requests.put(..): " + str(e))
 
-def validate_parameters(asgdc, asgmin, asgmax, scaleInTh, scaleOutTh, eipOpt, eip):
+def validate_parameters(byol_cnt, asgdc, asgmin, asgmax, scaleInTh, scaleOutTh, eipOpt, eip):
     global g_return_error
     message = ''
+    if asgmin < 0 or asgmax < 0 or asgdc < 0:
+        message = message + '(FortiWebAsgMinSizeOnDemand:%d, FortiWebAsgDesiredCapacityOnDemand:%d, FortiWebAsgMaxSizeOnDemand:%d) each should be not less than 0.\n' % (asgmin, asgdc, asgmax)
+    if byol_cnt < 0:
+        message = message + 'FortiWebAsgCapacityBYOL(%d) should be not less than 0.\n' % (byol_cnt)
     if (asgmin > asgmax):
-        message = message + 'FortiWebAsgMinSize(%d) should be less than or equal to FortiWebAsgMaxSize(%d).\n' % (asgmin, asgmax)
+        message = message + 'FortiWebAsgMinSizeOnDemand(%d) should be less than or equal to FortiWebAsgMaxSizeOnDemand(%d).\n' % (asgmin, asgmax)
     if (asgdc < asgmin):
-        message = message + 'FortiWebAsgDesiredCapacity(%d) should be bigger than or equal to FortiWebAsgMinSize(%d).\n' % (asgdc, asgmin)
+        message = message + 'FortiWebAsgDesiredCapacityOnDemand(%d) should be bigger than or equal to FortiWebAsgMinSizeOnDemand(%d).\n' % (asgdc, asgmin)
     if (asgdc > asgmax):
-        message = message + 'FortiWebAsgDesiredCapacity(%d) should be less than or equal to FortiWebAsgMaxSize(%d).\n' % (asgdc, asgmax)
+        message = message + 'FortiWebAsgDesiredCapacityOnDemand(%d) should be less than or equal to FortiWebAsgMaxSizeOnDemand(%d).\n' % (asgdc, asgmax)
+    if byol_cnt + asgmax > 16:
+        message = message + 'Sum of FortiWebAsgCapacityBYOL and FortiWebAsgMaxSizeOnDemand should not bigger than 16.\n'
     if (scaleInTh >= scaleOutTh):
         message = message + 'FortiWebAsgScaleInThreshold(%d) should be less than FortiWebAsgScaleOutThreshold(%d).\n' % (scaleInTh, scaleOutTh)
     if ('no' == eipOpt):
@@ -55,7 +61,7 @@ def validate_parameters(asgdc, asgmin, asgmax, scaleInTh, scaleOutTh, eipOpt, ei
     else:
         g_return_error = False
         print('parameter valid')
-        message = 'no error' 
+        message = 'no error'
     return message
 
 def delete_objects():
@@ -76,12 +82,13 @@ def handler(event, context):
     print('context:%s' % (str(context)))
     status = CFN_SUCCESS
     respData = {}
-    err_msg = 'no error' 
+    err_msg = 'no error'
     rpt = event['ResourceProperties']
     try:
-        asgdc = rpt['FortiWebAsgDesiredCapacity']
-        asgmin = rpt['FortiWebAsgMinSize']
-        asgmax = rpt['FortiWebAsgMaxSize']
+        byol_cnt = rpt['FortiWebAsgCapacityBYOL']
+        asgdc = rpt['FortiWebAsgDesiredCapacityOnDemand']
+        asgmin = rpt['FortiWebAsgMinSizeOnDemand']
+        asgmax = rpt['FortiWebAsgMaxSizeOnDemand']
         scaleInTh = rpt['FortiWebAsgScaleInThreshold']
         scaleOutTh = rpt['FortiWebAsgScaleOutThreshold']
         FortiWebVersionInternal = rpt['FortiWebVersionShow']
@@ -92,14 +99,40 @@ def handler(event, context):
             delete_objects()
             g_return_error = False
         else:
-            err_msg = validate_parameters(int(asgdc), int(asgmin), int(asgmax), int(scaleInTh), int(scaleOutTh), eipOpt, eip)
+            err_msg = validate_parameters(int(byol_cnt), int(asgdc), int(asgmin), int(asgmax),
+                            int(scaleInTh), int(scaleOutTh),
+                            eipOpt, eip)
     except Exception as e:
-        logging.error('Exception: %s' % e, exc_info=True)
-        err_msg = 'exception: %s' % e
+        logging.error('Exception: %s' % (str(e)), exc_info=True)
+        err_msg = 'exception: %s' % (str(e))
         status = CFN_FAILED
     finally:
         timer.cancel()
         if True == g_return_error:
             status = CFN_FAILED
         cfn_send(event, context, status, respData, err_msg)
+
+class fake_ctx(object):
+    def __init__(self):
+        pass
+    def get_remaining_time_in_millis(self):
+        return 100000
+
+if __name__ == "__main__":
+    print('hello')
+    rpt = {}
+    rpt['FortiWebAsgCapacityBYOL'] = 0
+    rpt['FortiWebAsgMinSizeOnDemand'] = 1
+    rpt['FortiWebAsgDesiredCapacityOnDemand'] = 1
+    rpt['FortiWebAsgMaxSizeOnDemand'] = 1
+    rpt['FortiWebAsgScaleInThreshold'] = 25
+    rpt['FortiWebAsgScaleOutThreshold'] = 80
+    rpt['FortiWebVersionShow'] = 'LATEST'
+    rpt['AddNewElasticIPorNot'] = 'no'
+    rpt['FortiWebElasticIP'] = '1.1.1.1'
+    event = {}
+    event['ResourceProperties'] = rpt
+    event['RequestType'] = 'Create'
+    ctx = fake_ctx()
+    handler(event, ctx)
 

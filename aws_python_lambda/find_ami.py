@@ -93,7 +93,7 @@ def cfn_send(evt, context, responseStatus, respData, reason=''):
     respBody['LogicalResourceId'] = evt['LogicalResourceId']
     respBody['NoEcho'] = None
     respBody['Data'] = respData
-   
+
     json_respBody = json.dumps(respBody)
     print("Response to cloudformation:\n" + json_respBody)
     headers = {'content-type' : '', 'content-length' : str(len(json_respBody)) }
