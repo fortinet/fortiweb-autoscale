@@ -258,7 +258,17 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             virtualMachineId: virtualMachine.instanceId
         };
         this._selfInstance = await this.platform.describeInstance(parameters);
-
+        logger.info('check if vm provision is done');
+		if (this._selfInstance.properties.provisioningState === "Deleting") {
+			logger.info(`${callingInstanceId} ${this._selfInstance.properties.vmId} is deleting. Remove it from monitored instances collection`);
+            await this.removeInstance({
+                vmId: this._selfInstance.properties.vmId
+            });
+            throw new Error(`Provision state for ${callingInstanceId} is ${this._selfInstance.properties.provisioningState}.`);
+		}
+		if (this._selfInstance.properties.provisioningState !== "Succeeded") {
+            throw new Error(`Provision state for ${callingInstanceId} is ${this._selfInstance.properties.provisioningState}.`);
+		}
         // is myself under health check monitoring?
         // do self health check
         logger.info(`do self under health check monitoring check, interval: ${heartBeatInterval}`);
@@ -289,8 +299,8 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
                         await this.platform.getInstanceHealthCheck(masterInfo,
                             heartBeatInterval);
                 }
-                masterIsHealthy = !!masterHealthCheck && masterHealthCheck.healthy;
-            }
+				masterIsHealthy = !!masterHealthCheck && masterHealthCheck.healthy;
+			}
 
             // we need a new master! let's hold a master election!
             if (!masterIsHealthy) {
@@ -299,14 +309,14 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
                 this._electionLock = await this.AcquireMutex(DB_COLLECTION_MASTER);
                 if (this._electionLock) {
                     // yes, you run it!
-                    logger.info('This thread is running an election.');
+                    logger.info(`This thread vmid ${this._selfInstance.properties.vmId} is running an election.`);
                     try {
                         // (diagram: elect new master from queue (existing instances))
                         await this.holdMasterElection(
                             this._selfInstance.getPrimaryPrivateIp(), heartBeatInterval);
                         logger.info('Election completed.');
                     } catch (error) {
-                        logger.error('Something went wrong in the master election.');
+                        logger.error(`Something went wrong in the master election: ${error}`);
                     } finally {
                         // release the lock, let someone else run the election.
                         await this.releaseMutex(DB_COLLECTION_MASTER, this._electionLock);
@@ -314,12 +324,12 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
                     }
                     // (diagram: master exists?)
                     masterInfo = await this.getMasterInfo();
+					masterIsHealthy = !!masterInfo;
                 } else {
                     logger.info(`Wait for master election (counter: ${++counter}, time:${Date.now()})`); // eslint-disable-line max-len
                 }
             }
             nextTime = Date.now();
-            masterIsHealthy = !!masterInfo;
             if (!masterIsHealthy) {
                 await AutoScaleCore.sleep(5000); // (diagram: wait for a moment (interval))
             }
@@ -329,9 +339,10 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
         if (nextTime >= getConfigTimeout) {
             // cannot bootstrap due to master election failure.
             // (diagram: remove instance)
-            await this.removeInstance({
+/*            await this.removeInstance({
                 vmId: this._selfInstance.properties.vmId
             });
+*/
             throw new Error(`Failed to determine the master instance within ${SCRIPT_TIMEOUT}` +
             ' seconds. This instance is unable to bootstrap. Please report this to' +
             ' administrators.');
@@ -356,15 +367,35 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
         for (virtualMachine of virtualMachines) {
             // if candidate is monitored, and it is in the healthy state
             // put in in the candidate pool
+			if (virtualMachine.properties.provisioningState !== "Succeeded") {
+				logger.info(`skip vm inst: ${virtualMachine.instanceId} due to its state is ${virtualMachine.properties.provisioningState}.`);
+				continue;
+			}
+			//logger.info(`vm inst: ${virtualMachine.instanceId}`);
             if (moniteredInstances[virtualMachine.instanceId] !== undefined) {
                 let healthCheck = await this.platform.getInstanceHealthCheck(
                     moniteredInstances[virtualMachine.instanceId], heartBeatInterval
                 );
                 if (healthCheck.healthy) {
+					logger.info(`master candidate: ${virtualMachine.instanceId}`);
                     candidates.push(virtualMachine);
                 }
             }
         }
+		for (let inst in moniteredInstances) {
+			let delete_record = true;
+			for (virtualMachine of virtualMachines) {
+				if (virtualMachine.instanceId === moniteredInstances[inst].instanceId) {
+					delete_record = false;
+					break;
+				}
+			}
+			if (delete_record) {
+				await this.removeInstance({
+					vmId: moniteredInstances[inst].vmId
+				});
+			}
+		}
 
         let instanceId = 0,
             master = null;
@@ -472,7 +503,7 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
 
     async listMonitoredInstances() {
         const queryObject = {
-            query: `SELECT * FROM ${DB_COLLECTION_MONITORED} c WHERE c.scaleSetName = @scaleSetName`, // eslint-disable-line max-len
+            query: `SELECT * FROM ${DB_COLLECTION_MONITORED} c WHERE c.scaleSetName = @scaleSetName ORDER BY c.instanceId desc`, // eslint-disable-line max-len
             parameters: [
                 {
                     name: '@scaleSetName',
@@ -495,6 +526,15 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
                     instances[doc.instanceId] = doc;
                 });
             }
+			if (instances.size === 0) {
+				logger.error('Cannot get monitored instances');
+			}
+			/*
+			for (let inst in instances) {
+				logger.info(`${inst}  =  ${instances[inst].vmId}`);
+			}
+			*/
+            logger.info('called listMonitoredInstances');
             return instances;
         } catch (error) {
             logger.error(error);
@@ -683,9 +723,55 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
      *      properties{vmId: <string>}
      */
     async removeInstance(instance) { // eslint-disable-line no-unused-vars
+//		let item = null;
+        const queryObject = {
+            query: `SELECT * FROM ${DB_COLLECTION_MONITORED} c WHERE c.scaleSetName = @scaleSetName AND c.vmId = @vmId`, // eslint-disable-line max-len
+            parameters: [
+                {
+                    name: '@scaleSetName',
+                    value: `${process.env.SCALESET_NAME}`
+                },
+                {
+                    name: '@vmId',
+                    value: `${instance.vmId}`
+                }
+            ]
+        };
+
+        try {
+			let docs = await armClient.CosmosDB.query(
+				process.env.SCALESET_DB_ACCOUNT, {
+					dbName: DATABASE_NAME,
+					collectionName: DB_COLLECTION_MONITORED,
+					partitioned: true,
+					queryObject: queryObject
+				}, process.env.REST_API_MASTER_KEY);
+			let item = docs[0];
+			if (!item) {
+				logger.error(`called delete instance ${instance.vmId} failed`);
+				return false;
+			}
+
+			let deleted = await armClient.CosmosDB.deleteDocument(
+				process.env.SCALESET_DB_ACCOUNT,
+				DATABASE_NAME,
+				DB_COLLECTION_MONITORED,
+				item.id,
+				process.env.REST_API_MASTER_KEY);
+			if (deleted) {
+				logger.info(`called delete instance ${instance.vmId} succeeded`);
+				return true;
+			} else {
+				logger.error(`called delete instance ${instance.vmId} failed`);
+				return true;
+			}
+        } catch (error) {
+            logger.error(error);
+        }
+        return false;
         // TODO: will not implement instance removal in V3
         // always return true
-        return await Promise.resolve(true);
+        //return await Promise.resolve(true);
     }
 
     responseToHeartBeat(masterIp, masterPubIp, vmId) {

@@ -65,7 +65,7 @@
     },
     "packageResUrl": {
       "type": "string",
-      "defaultValue": "https://github.com/fortinet/fortiweb-autoscale/releases/download/1.0.1/fortiweb-autoscale-azure-funcapp.zip",
+      "defaultValue": "https://github.com/fortinet/fortiweb-autoscale/releases/download/1.0.3/fortiweb-autoscale-azure-funcapp.zip",
       "metadata": {
         "description": "The public URL of package zip which contains the resource used to deploy the Function App."
       }

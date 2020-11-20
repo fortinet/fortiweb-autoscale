@@ -131,28 +131,28 @@
     "capacity": {
       "defaultValue": 1,
       "minValue": 0,
-      "maxValue": 16,
+      "maxValue": 8,
       "type": "int",
       "metadata": {
-        "description": "Initial Number of VM instances, range is 0-16, less than autoscaleMax."
+        "description": "Initial Number of VM instances, range is 0-8, less than autoscaleMax."
       }
     },
     "autoscaleMin": {
       "defaultValue": 1,
       "minValue": 0,
-      "maxValue": 16,
+      "maxValue": 8,
       "type": "int",
       "metadata": {
-        "description": "Minimum Number of VM instances, range is 0-16, less than autoscaleMax and capacity."
+        "description": "Minimum Number of VM instances, range is 0-8, less than autoscaleMax and capacity."
       }
     },
     "autoscaleMax": {
-      "defaultValue": 16,
+      "defaultValue": 8,
       "minValue": 1,
-      "maxValue": 16,
+      "maxValue": 8,
       "type": "int",
       "metadata": {
-        "description": "Maximum Number of VM instances, range is 1-16, greater than autoscaleMin."
+        "description": "Maximum Number of VM instances, range is 1-8, greater than autoscaleMin."
       }
     },
     "scaleUpCPUThreshold": {
@@ -733,7 +733,7 @@
             "value": "[parameters('vmssName')]"
           },
           "packageResUrl": {
-            "value": "https://github.com/fortinet/fortiweb-autoscale/releases/download/1.0.1/fortiweb-autoscale-azure-funcapp.zip"
+            "value": "https://github.com/fortinet/fortiweb-autoscale/releases/download/1.0.3/fortiweb-autoscale-azure-funcapp.zip"
           }
         }
       }

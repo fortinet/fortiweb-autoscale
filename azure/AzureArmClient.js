@@ -425,6 +425,7 @@ function azureApiCosmosDbQuery(dbAccount, resource, _masterKey) {
                 headers['x-ms-documentdb-partitionkey'] = resource.partitionkey;
             }
         }
+        headers['x-ms-max-item-count'] = -1;
         let body = '';
         try {
             body = JSON.stringify({

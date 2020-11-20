@@ -242,11 +242,9 @@ async function npmInstallAt(location, args = [], options = {}) {
         let pathInfo = path.parse(path.resolve(location)),
             packPath = path.join(pathInfo.dir, pathInfo.ext ? '' : pathInfo.base);
         Object.assign(options, {
-            supressError: true
+            supressError: false
         });
-        return await runCmd('npm', ['install'].concat(args), packPath, {
-            supressError: true
-        });
+        return await runCmd('npm', ['install'].concat(args), packPath, options);
     } else {
         return false;
     }
