@@ -58,7 +58,17 @@ async function getResource(resourceId, apiVersion) {
  * Fetch a network interface from ARM
  * @param {String} resourceId the resource id of network interface
  */
-async function getNetworkInterface(resourceId) {
+async function getNetworkInterface(resourceGroup, scaleSetName, virtualMachineId) {
+    let resourceId = `/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/${scaleSetName}/virtualMachines/${virtualMachineId}`; // eslint-disable-line max-len
+    try {
+            let networkInterfaces = await getResource(`${resourceId}/networkInterfaces`, '2017-12-01'); // eslint-disable-line max-len
+        //virtualMachine.properties.networkProfile.networkInterfaces = networkInterfaces.value;
+        return networkInterfaces.value;
+    } catch (error) {
+        logger.error(`getNetworkInterface > error ${JSON.stringify(error)}`);
+
+    }
+	/*
     try {
         logger.info('calling getNetworkInterface.');
         let response = await getResource(resourceId, '2017-12-01');
@@ -68,6 +78,7 @@ async function getNetworkInterface(resourceId) {
     } catch (error) {
         logger.error(`getNetworkInterface > error ${JSON.stringify(error)}`);
     }
+	*/
     return null;
 }
 
@@ -85,7 +96,14 @@ async function listVirtualMachines(resourceGroup, scaleSetName) {
         return response.value;
     } catch (error) {
         logger.error(`listVirtualMachines > error ${JSON.stringify(error)}`);
-        return [];
+//        logger.warn(`error code ${error.statusCode}`);
+		if (error.statusCode == 429) {
+//        	logger.warn('here');
+           	return [{name: "failed"}];
+		} else {
+			return [];
+		}
+        //return [];
     }
 }
 
@@ -103,6 +121,11 @@ async function getVirtualMachine(resourceGroup, scaleSetName, virtualMachineId) 
         virtualMachine.properties.networkProfile.networkInterfaces = networkInterfaces.value;
         return virtualMachine;
     } catch (error) {
+        logger.error(`getVirtualMachine > error ${JSON.stringify(error)}`);
+		if (error.statusCode == 429) {
+           	return {name: "failed"};
+		}
+		return null;
 
     }
 }
@@ -144,6 +167,7 @@ async function getVirtualMachineByIp(resourceGroup, scaleSetName, ip) {
  * @param {String} instanceId virtualmachine instance id
  */
 async function getVirtualMachinePublicIp(resourceGroup, scaleSetName, instanceId) {
+    logger.info('calling getVirtualMachinePublicIp.');
     let resourceId = `/subscriptions/${subscription}/resourceGroups/${resourceGroup}/` +
             `providers/Microsoft.Compute/virtualMachineScaleSets/${scaleSetName}/` +
             'publicipaddresses';
@@ -153,7 +177,6 @@ async function getVirtualMachinePublicIp(resourceGroup, scaleSetName, instanceId
             'ipConfigurations/autoscale1ipconfig1/publicIPAddresses/pub1';
     let pubIPs = await getResource(resourceId, '2017-12-01');
     let publicIp = '';
-    logger.info('calling getVirtualMachinePublicIp.');
     logger.info(`resourceID:${resourceId}`);
 
     for (let pubIP of pubIPs.value) {

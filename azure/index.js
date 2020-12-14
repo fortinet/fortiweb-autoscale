@@ -13,7 +13,8 @@ const DB_COLLECTION_MONITORED = 'instances';
 const DB_COLLECTION_MASTER = 'masterPool';
 const DB_COLLECTION_MUTEX = 'mutex';
 const ELECTION_WAITING_PERIOD = 60;// how many seconds to wait for an election before purging it?
-const SCRIPT_TIMEOUT = 300;// Azure script default timeout
+const SCRIPT_TIMEOUT = 100;// Azure script default timeout
+const MASTER_HB_LOSS_COUNT = 3;// Master HB loss count
 
 const moduleId = AutoScaleCore.uuidGenerator(JSON.stringify(`${__filename}${Date.now()}`));
 var logger = new AutoScaleCore.DefaultLogger();
@@ -76,6 +77,10 @@ class AzurePlatform extends AutoScaleCore.CloudPlatform {
         };
         let virtualMachines = await this.listAllInstances(parameters);
         for (let virtualMachine of virtualMachines) {
+			if (virtualMachine.name === "failed") {
+				logger.warn('Azure throttling issue met');
+				return null;
+			}
             logger.info(`vmid: ${virtualMachine.properties.vmId}`);
             if (virtualMachine.properties.vmId === vmId) {
                 return virtualMachine;
@@ -99,17 +104,27 @@ class AzurePlatform extends AutoScaleCore.CloudPlatform {
             return virtualMachines;
         } catch (error) {
             logger.logger.error(`listAllInstances > error ${JSON.stringify(error)}`);
-            return [];
+			return [];
         }
     }
 
-    async describeInstance(parameters) {
-        logger.info('calling describeInstance');
+	async getInstance(parameters) {
+        logger.info('calling getInstance');
         let virtualMachine =
             await armClient.Compute.VirtualMachineScaleSets.getVirtualMachine(
                 parameters.resourceGroup, parameters.scaleSetName,
                 parameters.virtualMachineId);
-        logger.info('called describeInstance');
+        logger.info('called getInstance');
+		return virtualMachine;
+	}
+    async describeInstance(parameters, virtualMachine) {
+        logger.info('calling describeInstance');
+		/*
+        let virtualMachine =
+            await armClient.Compute.VirtualMachineScaleSets.getVirtualMachine(
+                parameters.resourceGroup, parameters.scaleSetName,
+                parameters.virtualMachineId);
+		*/
 
         let vmPubIPAddr = await armClient.Compute.VirtualMachineScaleSets.getVirtualMachinePublicIp(
                 parameters.resourceGroup, parameters.scaleSetName, parameters.virtualMachineId);
@@ -132,6 +147,7 @@ class AzurePlatform extends AutoScaleCore.CloudPlatform {
             vm.getPrimaryPublicIp = () => {
                 return vmPubIPAddr;
             };
+        	logger.info('called describeInstance');
             return vm;
         })(virtualMachine);
     }
@@ -141,6 +157,7 @@ class AzurePlatform extends AutoScaleCore.CloudPlatform {
      * @param {Object} instance instance object which a vmId property is required.
      * @param {Number} heartBeatInterval integer value, unit is second.
      */
+    //async getInstanceHealthCheck(instance, heartBeatInterval, isMaster=false) {
     async getInstanceHealthCheck(instance, heartBeatInterval) {
         let isHealthy = true;
         logger.info('calling getInstanceHealthCheck');
@@ -172,14 +189,39 @@ class AzurePlatform extends AutoScaleCore.CloudPlatform {
             }, process.env.REST_API_MASTER_KEY);
             if (Array.isArray(docs) && docs.length > 0) {
                 logger.info('called getInstanceHealthCheck');
-                if (((Date.now() - docs[0].nextHeartBeatTime) / (heartBeatInterval * 1000)) >
-                        process.env.HEART_BEAT_LOSS_COUNT) {
-                    /* we has missed too many heartbeat packets, set the status to unhealthy */
-                    logger.info(`instance(${instance.vmId}) has missed more than ` +
-                        `${process.env.HEART_BEAT_LOSS_COUNT} heartbeats, set the status ` +
-                        `to unhealthy, interval:${heartBeatInterval}`);
-                    isHealthy = false;
-                }
+				//FIXME:check master's provision state
+				/*
+				if (isMaster) {
+					if (((Date.now() - docs[0].nextHeartBeatTime) / (heartBeatInterval * 1000)) >
+						MASTER_HB_LOSS_COUNT) {
+						let master = docs[0],
+							master_vm = null,
+							parameters = {
+								resourceGroup: process.env.RESOURCE_GROUP,
+								scaleSetName: process.env.SCALESET_NAME,
+								virtualMachineId: master.instanceId
+							};
+						master_vm = await this.platform.getInstance(parameters);
+						if (!!master_vm && master_vm.properties.provisioningState !== "Succeeded") {
+							logger.error(`Provision state for master ${master.instanceId} is ${master_vm.properties.provisioningState}.`);
+							isHealthy = false;
+						} else {
+							if (!master_vm) {
+								logger.warn(`Cannot get provision state of master ${master.instanceId}`);
+							}
+							isHealthy = true;
+						}
+					}
+				} else { */
+					if (((Date.now() - docs[0].nextHeartBeatTime) / (heartBeatInterval * 1000)) >
+						process.env.HEART_BEAT_LOSS_COUNT) {
+						/* we has missed too many heartbeat packets, set the status to unhealthy */
+						logger.info(`instance(${instance.vmId}) has missed more than ` +
+							`${process.env.HEART_BEAT_LOSS_COUNT} heartbeats, set the status ` +
+							`to unhealthy, interval:${heartBeatInterval}`);
+						isHealthy = false;
+					}
+				//}
                 return {
                     healthy: isHealthy,
                     heartBeatLossCount: docs[0].heartBeatLossCount,
@@ -238,6 +280,7 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             selfHealthCheck,
             masterHealthCheck,
             callingInstanceId = this.findCallingInstanceId(_request),
+            callingScalesetInstanceId = this.findCallingScalesetInstanceId(_request),
             heartBeatInterval = this.findHeartBeatInterval(_request),
             counter = 0,
             nextTime,
@@ -245,30 +288,43 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             virtualMachine;
 
         // verify the caller (diagram: trusted source?)
-        virtualMachine = await this.platform.getInstanceById(callingInstanceId);
-        if (!virtualMachine) {
-            // not trusted
-            throw new Error(`Unauthorized calling instance (vmid: ${callingInstanceId}). Instance not found in scale set.`); // eslint-disable-line max-len
-        }
-
+		if (!callingScalesetInstanceId) {
+			virtualMachine = await this.platform.getInstanceById(callingInstanceId);
+			if (!virtualMachine) {
+				// not trusted
+				throw new Error(`Unauthorized calling instance (vmid: ${callingInstanceId}). Instance not found in scale set.`); // eslint-disable-line max-len
+			}
+			callingInstanceId = virtualMachine.instanceId;
+		} else {
+			callingInstanceId = callingScalesetInstanceId;
+		}
         // describe self
+	
         parameters = {
             resourceGroup: process.env.RESOURCE_GROUP,
             scaleSetName: process.env.SCALESET_NAME,
-            virtualMachineId: virtualMachine.instanceId
+            virtualMachineId: callingInstanceId
         };
-        this._selfInstance = await this.platform.describeInstance(parameters);
+		virtualMachine = await this.platform.getInstance(parameters);
+        if (!virtualMachine){
+            // not trusted
+            throw new Error(`Unauthorized calling instance (${callingInstanceId}). Instance not found in scale set.`); // eslint-disable-line max-len
+        }
+		if (virtualMachine.name === "failed") {
+				throw new Error(`Azure throttling issue met. Cannot identify calling instance (${callingInstanceId})`);
+		}
         logger.info('check if vm provision is done');
-		if (this._selfInstance.properties.provisioningState === "Deleting") {
-			logger.info(`${callingInstanceId} ${this._selfInstance.properties.vmId} is deleting. Remove it from monitored instances collection`);
+		if (virtualMachine.properties.provisioningState === "Deleting") {
+			logger.info(`${callingInstanceId} ${virtualMachine.properties.vmId} is deleting. Remove it from monitored instances collection`);
             await this.removeInstance({
-                vmId: this._selfInstance.properties.vmId
+                vmId: virtualMachine.properties.vmId
             });
-            throw new Error(`Provision state for ${callingInstanceId} is ${this._selfInstance.properties.provisioningState}.`);
+            throw new Error(`Provision state for ${callingInstanceId} is ${virtualMachine.properties.provisioningState}.`);
 		}
-		if (this._selfInstance.properties.provisioningState !== "Succeeded") {
-            throw new Error(`Provision state for ${callingInstanceId} is ${this._selfInstance.properties.provisioningState}.`);
+		if (virtualMachine.properties.provisioningState !== "Succeeded") {
+            throw new Error(`Provision state for ${callingInstanceId} is ${virtualMachine.properties.provisioningState}.`);
 		}
+        this._selfInstance = await this.platform.describeInstance(parameters, virtualMachine);
         // is myself under health check monitoring?
         // do self health check
         logger.info(`do self under health check monitoring check, interval: ${heartBeatInterval}`);
@@ -313,7 +369,7 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
                     try {
                         // (diagram: elect new master from queue (existing instances))
                         await this.holdMasterElection(
-                            this._selfInstance.getPrimaryPrivateIp(), heartBeatInterval);
+                            this._selfInstance, heartBeatInterval);
                         logger.info('Election completed.');
                     } catch (error) {
                         logger.error(`Something went wrong in the master election: ${error}`);
@@ -353,7 +409,7 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
         return this.responseToHeartBeat(masterInfo.ip, masterInfo.publicIp, masterInfo.vmId);
     }
 
-    async holdMasterElection(ip, heartBeatInterval) { // eslint-disable-line no-unused-vars
+    async holdMasterElection(vmself, heartBeatInterval) { // eslint-disable-line no-unused-vars
         // list all election candidates
         let parameters = {
             resourceGroup: process.env.RESOURCE_GROUP,
@@ -364,7 +420,12 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             this.platform.listAllInstances(parameters),
             this.listMonitoredInstances()
         ]);
+		let get_vm_failed = false;
         for (virtualMachine of virtualMachines) {
+			if (virtualMachine.name === "failed") {
+				get_vm_failed = true;
+				break;
+			}
             // if candidate is monitored, and it is in the healthy state
             // put in in the candidate pool
 			if (virtualMachine.properties.provisioningState !== "Succeeded") {
@@ -382,60 +443,58 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
                 }
             }
         }
-		for (let inst in moniteredInstances) {
-			let delete_record = true;
-			for (virtualMachine of virtualMachines) {
-				if (virtualMachine.instanceId === moniteredInstances[inst].instanceId) {
-					delete_record = false;
-					break;
+		if (!get_vm_failed) {
+			for (let inst in moniteredInstances) {
+				let delete_record = true;
+				for (virtualMachine of virtualMachines) {
+					if (virtualMachine.instanceId === moniteredInstances[inst].instanceId) {
+						delete_record = false;
+						break;
+					}
+				}
+				if (delete_record) {
+					await this.removeInstance({
+						vmId: moniteredInstances[inst].vmId
+					});
 				}
 			}
-			if (delete_record) {
-				await this.removeInstance({
-					vmId: moniteredInstances[inst].vmId
-				});
+			let instanceId = 0,
+				master = null;
+			if (candidates.length > 0) {
+				// choose the one with smaller instanceId
+				for (candidate of candidates) {
+					if (instanceId === 0 || candidate.instanceId < instanceId) {
+						instanceId = candidate.instanceId;
+						master = candidate;
+					}
+				}
 			}
+
+			if (master) {
+				logger.info(`Elected Master: ${master.instanceId}`);
+				//get network interfaces
+				master.properties.networkProfile.networkInterfaces =
+					await armClient.Compute.VirtualMachineScaleSets.getNetworkInterface(
+                		process.env.RESOURCE_GROUP,
+						process.env.SCALESET_NAME,
+                		master.instanceId);
+				parameters = {
+					resourceGroup: process.env.RESOURCE_GROUP,
+					scaleSetName: process.env.SCALESET_NAME,
+					virtualMachineId: instanceId
+				};
+				virtualMachine = await this.platform.describeInstance(parameters, master);
+				logger.info(`Elected virtualMachine: ${virtualMachine.instanceId}`);
+				return await this.updateMaster(virtualMachine);
+			} else {
+				return Promise.reject('No instance available for master.');
+			}
+		} else {
+			//deemed myself as master
+        	logger.warn('Azure throttling issue met during master election');
+        	logger.warn(`Deem myself ${vmself.instanceId} as newly elected Master`);
+			return await this.updateMaster(vmself);
 		}
-
-        let instanceId = 0,
-            master = null;
-        let promiseAllArray = [],
-            candidateDescribingFunc = async _candidate => {
-                let _parameters = {
-                    resourceGroup: process.env.RESOURCE_GROUP,
-                    scaleSetName: process.env.SCALESET_NAME,
-                    virtualMachineId: _candidate.instanceId
-                };
-                return await this.platform.describeInstance(_parameters);
-            };
-        if (candidates.length > 0) {
-            // choose the one with smaller instanceId
-            for (candidate of candidates) {
-                if (instanceId === 0 || candidate.instanceId < instanceId) {
-                    instanceId = candidate.instanceId;
-                    master = candidate;
-                }
-                promiseAllArray.push((candidateDescribingFunc)(candidate));
-            }
-
-            if (promiseAllArray.length > 0) {
-                candidates = await Promise.all(promiseAllArray);
-            }
-            // monitor all candidates
-            await Promise.all(promiseAllArray);
-        }
-
-        if (master) {
-            parameters = {
-                resourceGroup: process.env.RESOURCE_GROUP,
-                scaleSetName: process.env.SCALESET_NAME,
-                virtualMachineId: instanceId
-            };
-            virtualMachine = await this.platform.describeInstance(parameters);
-            return await this.updateMaster(virtualMachine);
-        } else {
-            return Promise.reject('No instance available for master.');
-        }
     }
 
     async updateMaster(instance) {
@@ -557,6 +616,21 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             return error ? null : null;
         }
     }
+    findCallingScalesetInstanceId(_request) {
+        try {
+            // try to get instance id from headers
+            if (_request && _request.headers && _request.headers['fwb-scaleset-instance-id']) {
+                return _request.headers['fwb-scaleset-instance-id'];
+            } else {
+                // try to get instance id from body
+                if (_request && _request.body && _request.body.scalesetinstance) {
+                    return _request.body.scalesetinstance;
+                } else { return null }
+            }
+        } catch (error) {
+            return error ? null : null;
+        }
+    }
 
     findHeartBeatInterval(_request) {
         let _interval = 120;
@@ -588,7 +662,7 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
                 queryObject: queryObject
             }, process.env.REST_API_MASTER_KEY);
             if (docs.length > 0) {
-                return docs[0];
+				return docs[0];
             } else {
                 return null;
             }
