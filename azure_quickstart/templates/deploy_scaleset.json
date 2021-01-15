@@ -262,7 +262,7 @@
     "scaleUpInterval": "[concat('PT', parameters('scaleUpTimeWindow'), 'M')]",
     "scaleDownInterval": "[concat('PT', parameters('scaleDownTimeWindow'), 'M')]",
     "dbName": "[concat(uniqueString(resourceGroup().id), 'db')]",
-    "deployFunAppUrl": "https://raw.githubusercontent.com/fortinet/fortiweb-autoscale/master/azure_quickstart/templates/deploy_funcapp.json",
+    "deployFunAppUrl": "https://raw.githubusercontent.com/fortinet/fortiweb-autoscale/main/azure_quickstart/templates/deploy_funcapp.json",
     "lbFrontIPConfProMap": {
       "Internal": {
         "privateIPAllocationMethod": "Dynamic",
