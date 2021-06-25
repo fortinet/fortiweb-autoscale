@@ -230,6 +230,14 @@
       "metadata": {
         "description": "Heartbeat loss count before the function application consider the VM instance is dead(each vm will send heartbeat to function application every 10 seconds)."
       }
+    },
+    "PublicIPForFWBVM": {
+        "defaultValue": "True",
+        "allowedValues": ["True", "False"],
+        "type": "String",
+        "metadata": {
+            "description": "Assign Public IP address to FWB VM. If set to 'True', the Public IP address will be assigned to FWB VM. If set to 'False', no public IP address will be allocated to FWB."
+        }
     }
   },
   "variables": {
@@ -276,7 +284,14 @@
           "id": "[resourceId('Microsoft.Network/publicIpAddresses', variables('pipName'))]"
         }
       }
-    }
+    },
+	"publicIpConf": {
+        "name": "pub1",
+        "properties": {
+            "idleTimeoutInMinutes": 15
+        }
+    },
+	"IpConf" :"[if(equals(parameters('PublicIPForFWBVM'), 'True'), variables('publicIpConf'), '')]"
   },
   "resources": [
     {
@@ -593,12 +608,7 @@
                           }
                         ],
                         "privateIPAddressVersion": "IPv4",
-                        "publicIpAddressConfiguration": {
-                          "name": "pub1",
-                          "properties": {
-                            "idleTimeoutInMinutes": 15
-                          }
-                        }
+                        "publicIpAddressConfiguration": "[variables('IpConf')]"
                       }
                     }
                   ]
