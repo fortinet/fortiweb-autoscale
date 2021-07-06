@@ -1,0 +1,44 @@
+name: fortiweb-autoscale
+on:
+        push:
+                tags:
+                        - '1.0.6-beta1'
+                branches:
+                        - main
+jobs:
+        build:
+                name: Upload New Release
+                runs-on: ubuntu-latest
+                steps:
+                        - uses: actions/checkout@v2
+                        - name: Use Node.js
+                          uses: actions/setup-node@v1
+                          with:
+                            node-version: '12.x'
+                        - run: npm install
+                        - run: npm run Build
+
+                        - name: Checkout Code
+                          uses: actions/checkout@v2
+                        - name: Build Project
+                          run: zip -r release.zip . -x ".git/*" "./github/*" ".gitignore"
+                        - name: Create Release
+                          id: create_release
+                          uses: actions/create-release@v1
+                          env:
+                                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                          with:
+                                  tag_name: 1.0.6-beta1
+                                  release_name: 1.0.6-Beta-1
+                                  draft: true
+                                  prerelease: true
+                        - name: Upload Release Asset
+                          id: upload_release_asset
+                          uses: actions/upload-release-asset@v1
+                          env:
+                                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                          with:
+                                  upload_url: ${{ steps.create_release.outputs.upload_url }}
+                                  asset_path: ./dist/*
+                                  asset_content_type: application/zip
+
