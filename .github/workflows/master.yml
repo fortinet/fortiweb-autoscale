@@ -2,7 +2,7 @@ name: fortiweb-autoscale
 on:
         push:
                 tags:
-                        - '1.0.6-beta1'
+                        - 'v1.0.8-beta'
                 branches:
                         - main
 jobs:
@@ -17,28 +17,18 @@ jobs:
                             node-version: '12.x'
                         - run: npm install
                         - run: npm run Build
-
                         - name: Checkout Code
                           uses: actions/checkout@v2
                         - name: Build Project
                           run: zip -r release.zip . -x ".git/*" "./github/*" ".gitignore"
                         - name: Create Release
                           id: create_release
-                          uses: actions/create-release@v1
+                          run: |
+                            set -x
+                            assets=()
+                            for asset in ./dist/*.zip; do
+                              assets+=("-a" "$asset")
+                            done
+                            hub release create "${assets[@]}" -m "1.0.8-beta" "fortiweb-autoscale-ver-108"
                           env:
                                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                          with:
-                                  tag_name: 1.0.6-beta1
-                                  release_name: 1.0.6-Beta-1
-                                  draft: true
-                                  prerelease: true
-                        - name: Upload Release Asset
-                          id: upload_release_asset
-                          uses: actions/upload-release-asset@v1
-                          env:
-                                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                          with:
-                                  upload_url: ${{ steps.create_release.outputs.upload_url }}
-                                  asset_path: ./dist/*
-                                  asset_content_type: application/zip
-
