@@ -1,4 +1,4 @@
-##python2
+##python3
 import os
 import sys
 import boto3
@@ -6,6 +6,7 @@ import json
 import threading
 import logging
 import urllib3
+import functools
 #from functools import cmp_to_key
 
 CFN_SUCCESS = "SUCCESS"
@@ -70,8 +71,8 @@ def find_latest(pay_type, ami_name=None):
     for image in image_list:
         version = image['name'].split('FortiWeb-AWS-')[1].split(pay_type)[0]
         image['version'] = version
-    #image_list.sort(key=cmp_to_key(mycmp))
-    image_list.sort(mycmp)
+	image_list.sort(key=functools.cmp_to_key(mycmp))
+	#image_list.sort(mycmp)
     print('pay_type(%s) ami list: %s' % (pay_type, image_list))
     return image_list[-1]
 
