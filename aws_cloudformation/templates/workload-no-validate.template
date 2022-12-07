@@ -2062,7 +2062,7 @@
                         ]
                     ]
                 },
-                "Runtime": "python3.6",
+                "Runtime": "python3.9",
                 "Role": {
                     "Fn::GetAtt": [
                         "IamRoleLfFwbAsg",
