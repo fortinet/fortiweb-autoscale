@@ -538,7 +538,7 @@
       "location": "[resourceGroup().location]",
       "zones": "[if(contains(createArray('Central US', 'France Central', 'North Europe', 'Southeast Asia', 'West Europe', 'West US 2'), resourceGroup().location), variables('zones'), json('null'))]",
       "plan": {
-        "name": "fortinet_fw-vm_payg",
+        "name": "fortinet_fw-vm_payg_v2",
         "publisher": "fortinet",
         "product": "fortinet_fortiweb-vm_v5"
       },
@@ -553,7 +553,7 @@
             "imageReference": {
               "publisher": "fortinet",
               "offer": "fortinet_fortiweb-vm_v5",
-              "sku": "fortinet_fw-vm_payg",
+              "sku": "fortinet_fw-vm_payg_v2",
               "version": "[parameters('imageversion')]"
             },
             "dataDisks": [
