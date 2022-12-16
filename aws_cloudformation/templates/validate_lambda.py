@@ -1,7 +1,7 @@
 import json,logging,threading,boto3
 from botocore.vendored import requests
 import re
-
+import urllib3
 CFN_SUCCESS = "SUCCESS"
 CFN_FAILED = "FAILED"
 
@@ -24,8 +24,10 @@ def cfn_send(evt, context, responseStatus, respData, reason=''):
     print("Response body:\n" + json_respBody)
     headers = {'content-type' : '', 'content-length' : str(len(json_respBody)) }
     try:
-        response = requests.put(respUrl,data=json_respBody,headers=headers)
-        print("Status code: " + response.reason)
+        http = urllib3.PoolManager()
+        response = http.request('PUT', respUrl, headers=headers, body=json_respBody)
+        #response = requests.put(respUrl,data=json_respBody,headers=head    ers)
+        print("Status code: " + response.status)
     except Exception as e:
         print("failed executing requests.put(..): " + str(e))
 
