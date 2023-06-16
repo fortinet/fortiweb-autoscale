@@ -1043,7 +1043,7 @@
                         ]
                     ]
                 },
-                "Runtime": "nodejs18.x",
+                "Runtime": "nodejs16.x",
                 "Role": {
                     "Fn::GetAtt": [
                         "IamRoleLfFwbAsg",
