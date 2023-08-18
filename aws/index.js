@@ -5,24 +5,17 @@ FortiWeb Autoscale AWS Module (1.0.0-beta)
 Author: Fortinet
 */
 exports = module.exports;
-const AWS = require('aws-sdk');
+const { AutoScalingClient, AttachInstancesCommand,DescribeAutoScalingGroupsCommand, CompleteLifecycleActionCommand } = require('@aws-sdk/client-auto-scaling');
+const { DynamoDBClient, BatchExecuteStatementCommand, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
+const {EC2Client, AcceptAddressTransferCommand, DescribeInstancesCommand, AssociateAddressCommand } = require('@aws-sdk/client-ec2');
+const { DynamoDBDocumentClient, PutCommand, QueryCommand, ScanCommand, DeleteCommand, GetCommand } = require("@aws-sdk/lib-dynamodb"); // CommonJS import
 const AutoScaleCore = require('fortiweb-autoscale-core');
 
-// lock the API versions
-AWS.config.apiVersions = {
-    autoscaling: '2011-01-01',
-    ec2: '2016-11-15',
-    lambda: '2015-03-31',
-    dynamodb: '2012-08-10',
-    apiGateway: '2015-07-09',
-    s3: '2006-03-01'
-};
-
 const
-    autoScaling = new AWS.AutoScaling(),
-    dynamodb = new AWS.DynamoDB(),
-    docClient = new AWS.DynamoDB.DocumentClient(),
-    ec2 = new AWS.EC2(),
+    autoScaling = new AutoScalingClient(),
+    dynamodb = new DynamoDBClient(),
+    docClient = DynamoDBDocumentClient.from(dynamodb),
+    ec2  = new EC2Client(),
     unique_id = process.env.UNIQUE_ID.replace(/.*\//, ''),
     custom_id = process.env.CUSTOM_ID.replace(/.*\//, ''),
     SCRIPT_TIMEOUT = 120,
@@ -139,13 +132,19 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
     }
 
     async tableExists(schema) {
+        logger.log('enter tableexist()');
+        const command = new DescribeTableCommand({
+            TableName: schema.TableName,
+        });
+        logger.log('create command');
         try {
-            await dynamodb.describeTable({ TableName: schema.TableName }).promise();
+            const response = await docClient.send(command);
             logger.info('table exists: ', schema.TableName);
             return true;
         } catch (ex) {
+            logger.warn('table is missing', schema.TableName);
             throw new Error(`table (${schema.TableName}) not exists!`);
-        }
+        }     
     }
 
     async getLifecycleItemByInstanceId(instanceId) {
@@ -160,9 +159,10 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
                     ':InstanceId': instanceId
                 }
             },
-            response = await docClient.query(query).promise(),
+            command = new QueryCommand(query),
+            response = await docClient.send(command),
             items = response.Items;
-        // logger.info(`response: ${JSON.stringify(response)}`);
+        
         if (!items || !Array.isArray(items) || items.length === 0) {
             logger.log('in getLifecycleItemByInstanceId(). No lifecycle item.');
             return {};
@@ -179,9 +179,10 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
 
     //BYOL has no lifecycle, so we use application level in-service proof
     async getInServiceItems() {
-        let response = await docClient.scan({
+        const command = new ScanCommand({
             TableName: DB.HEARTBEAT.TableName
-        }).promise();
+        });
+        let response = await dynamodb.send(command);
         let items = response.Items;
         if (!(items && items.length)) {
             logger.log('there no in service item');
@@ -199,12 +200,14 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
         };
         if (!failWhenExists) {
             logger.log('updateCreateLifecycleItem should create or update item');
-            return await docClient.put(params).promise();
+            const command = new PutCommand(params);
+            return await docClient.send(command);
         }
         logger.log('updateCreateLifecycleItem can fail when item exists!');
         params.ConditionExpression = 'attribute_not_exists(instanceId)';
         try {
-            return await docClient.put(params).promise();
+            const command = new PutCommand(params);
+            return await docClient.send(command);
         } catch (error) {
             return false;
         }
@@ -219,7 +222,8 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
                     instanceId: instanceId
                 }
             };
-            return !!await docClient.delete(params).promise();
+            const command = new DeleteCommand(params)
+            return !!await docClient.send(command);
         } catch (ex) {
             console.error('Error while cleaning up :', ex);
             return false;
@@ -238,8 +242,8 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
             TableName: DB.HEARTBEAT.TableName
         };
         try {
-            let data = await docClient.get(params).promise();
-            // logger.info('heartbeatitem response data: ' + JSON.stringify(data));
+            const command = new GetCommand(params);
+            let data = await docClient.send(command);
             if (data.Item) {
                 return data.Item;
             } else {
@@ -281,7 +285,8 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
                     instanceId: instanceId
                 }
             };
-            return !!await docClient.delete(params).promise();
+            const command = new DeleteCommand(params)
+            return !!await docClient.send(command);
         } catch (ex) {
             console.error('Error while cleaning up :', ex);
             return false;
@@ -300,7 +305,8 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
                 // InstanceId: event.instanceId
             };
             if (!process.env.DEBUG_MODE) {
-                await autoScaling.completeLifecycleAction(params).promise();
+                const command = new CompleteLifecycleActionCommand(params);
+                const response = await autoScaling.send(command);
             }
             logger.log(
             `[${params.LifecycleActionResult}] applied to hook[${params.LifecycleHookName}]` +
@@ -325,7 +331,8 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
                     ':primaryKeyValue': process.env.AUTO_SCALING_GROUP_NAME
                 }
             },
-            response = await docClient.scan(params).promise(),
+            command = new ScanCommand(params),
+            response = await dynamodb.send(command),
             items = response.Items;
         if (!items || items.length === 0) {
             // logger.info('No elected master was found in the db!');
@@ -360,9 +367,10 @@ class AwsPlatform extends AutoScaleCore.CloudPlatform {
                 Values: [parameters.privateIp]
             });
         }
-        const result = await ec2.describeInstances(params).promise();
-        // logger.info(`called describeInstance, result: ${JSON.stringify(result)}`);
+        const command = new DescribeInstancesCommand(params);
+        const result = await ec2.send(command);
         return result.Reservations[0] && result.Reservations[0].Instances[0];
+        
     }
 
 }
@@ -391,7 +399,8 @@ class AwsAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
                 process.env.AUTO_SCALING_GROUP_NAME_BYOL
             ]
         };
-        let data = await autoScaling.describeAutoScalingGroups(params).promise();
+        const command = new DescribeAutoScalingGroupsCommand(params);
+        let data = await autoScaling.send(command);
         let instance_ids = [];
 
         data.AutoScalingGroups.forEach(asg_resp => {
@@ -499,7 +508,9 @@ class AwsAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
                 ConditionExpression: 'attribute_not_exists(asgName)'
             };
             logger.log('masterElectionVote, candidateInstanceId: ', candidateInstanceId);
-            return !!await docClient.put(params).promise();
+            const command = new PutCommand(params);
+
+            return !! await docClient.send(command);
         } catch (ex) {
             console.warn('exception while voteInstanceAsMaster, ' +
                     `instanceid (${candidateInstanceId}), exception(${ex.stack})`);
@@ -612,26 +623,14 @@ class AwsAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
 
     async attachElasticIP(instanceId) {
         let elasticIP = process.env.ElasticIP;
-/*
-        let params = {
-          PublicIps: [
-            elasticIP
-          ]
-        };
-        const result = await ec2.describeAddresses(params).promise();
-        if (!(result.Addresses && result.Addresses[0].AllocationId)) {
-            logger.log('can not get association of' +
-                  `elasticIP(${elasticIP}),result is: ${JSON.stringify(result)}`);
-            return
-        }
-*/
         let asso_params = {
             AllowReassociation: true,
             //AllocationId: result.Addresses[0].AllocationId,
             PublicIp: elasticIP,
             InstanceId: instanceId
         }
-        let result1 = await ec2.associateAddress(asso_params).promise();
+        const command = new AssociateAddressCommand(asso_params);
+        let result1 = await ec2.send(command);
         logger.log('association result' + `${JSON.stringify(result1)}`);
     }
 
@@ -808,8 +807,9 @@ class AwsAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             },
             TableName: DB.HEARTBEAT.TableName
         };
-        let flag1 = await docClient.put(params).promise();
+        const command = new PutCommand(params);
 
+        let flag1 = await docClient.send(command);
         return flag1;
     }
 
@@ -830,7 +830,8 @@ class AwsAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
         };
         let flag;
         try {
-            flag = !!await docClient.delete(params).promise();
+            const command = new DeleteCommand(params);
+            flag = !!await docClient.send(command);
             logger.log(`in purgeMaster(), delete item(${asgName}, ` +
                         `${instanceId}) result(${JSON.stringify(flag)})`);
             return flag;
@@ -896,13 +897,7 @@ exports.AwsAutoscaleHandler = AwsAutoscaleHandler;
  * @returns {Object} exports
  */
 exports.initModule = () => {
-    AWS.config.update({
-        region: process.env.AWS_REGION
-    });
-    /**
-     * expose the module runtime id
-     * @returns {String} a unique id.
-     */
+
     exports.moduleRuntimeId = () => moduleId;
     /**
      * Handle the auto-scaling
@@ -919,3 +914,4 @@ exports.initModule = () => {
     };
     return exports;
 };
+
