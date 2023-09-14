@@ -111,6 +111,29 @@
       }
     },
     {
+        "apiVersion": "2017-03-15-preview",
+        "name": "[variables('hostingPlanName')]",
+        "location": "[variables('location')]",
+        "type": "Microsoft.OperationalInsights/workspaces",
+        "properties": {
+            "sku": {
+                "name": "PerGB2018"
+            }
+        }
+    },    
+    {
+        "type": "Microsoft.Insights/components",
+        "apiVersion": "2020-02-02",
+        "name": "[variables('hostingPlanName')]",
+        "location": "[variables('location')]",
+        "kind": "web",
+        "properties": {
+            "Application_Type": "web",
+            "ApplicationId": "[variables('functionAppName')]",
+            "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('hostingPlanName'))]",
+        }
+    },
+    {
       "apiVersion": "2015-08-01",
       "type": "Microsoft.Web/sites",
       "name": "[variables('functionAppName')]",
@@ -126,8 +149,12 @@
         "siteConfig": {
           "appSettings": [
             {
-              "name": "AzureWebJobsDashboard",
-              "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountid'),'2015-05-01-preview').key1)]"
+                "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                "value": "[reference(resourceId('Microsoft.Insights/components/', variables('hostingPlanName')), '2018-05-01-preview').InstrumentationKey]"
+            },
+            {
+                "name": "FUNCTIONS_WORKER_RUNTIME",
+                "value": "node"
             },
             {
               "name": "AzureWebJobsStorage",
@@ -143,11 +170,11 @@
             },
             {
               "name": "FUNCTIONS_EXTENSION_VERSION",
-              "value": "~2"
+              "value": "~4"
             },
             {
               "name": "WEBSITE_NODE_DEFAULT_VERSION",
-              "value": "8.11.1"
+              "value": "~18"
             },
             {
               "name": "FWB_BASE_CONFIG",
