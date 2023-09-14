@@ -241,7 +241,7 @@ class AzurePlatform extends AutoScaleCore.CloudPlatform {
 
 class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
     constructor() {
-        const baseConfig = process.env.FWB_BASE_CONFIG.replace(/\\n/g, '\n');
+        const baseConfig = process.env.FWB_BASE_CONFIG?.replace(/\\n/g, '\n');
         super(new AzurePlatform(), baseConfig);
         this._electionLock = null;
         this._selfInstance = null;
