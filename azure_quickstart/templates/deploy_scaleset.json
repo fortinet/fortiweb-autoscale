@@ -17,7 +17,9 @@
       "allowedValues": [
         "Standard_F2",
         "Standard_F4",
-        "Standard_F8"
+        "Standard_F8",
+        "Standard_F16",
+        "Standard_F16s"
       ],
       "metadata": {
         "description": "Size of VMs in the VM Scale Set."
