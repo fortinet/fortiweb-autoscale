@@ -130,7 +130,7 @@
         "properties": {
             "Application_Type": "web",
             "ApplicationId": "[variables('functionAppName')]",
-            "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('hostingPlanName'))]",
+            "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('hostingPlanName'))]"
         }
     },
     {
