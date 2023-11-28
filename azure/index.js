@@ -288,6 +288,14 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             virtualMachine;
 
         // verify the caller (diagram: trusted source?)
+        if( callingInstanceId == "get_master_info") {
+            masterInfo = await this.getMasterInfo();
+            if (masterInfo) {
+                return this.responseToHeartBeat(masterInfo.ip, masterInfo.publicIp, masterInfo.vmId);
+            } else {
+                throw new Error(`Get Master failed\n.`); 
+            }
+        }
 		if (!callingScalesetInstanceId) {
 			virtualMachine = await this.platform.getInstanceById(callingInstanceId);
 			if (!virtualMachine) {
