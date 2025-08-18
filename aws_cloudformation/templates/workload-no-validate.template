@@ -1043,7 +1043,7 @@
                         ]
                     ]
                 },
-                "Runtime": "nodejs18.x",
+                "Runtime": "nodejs22.x",
                 "Role": {
                     "Fn::GetAtt": [
                         "IamRoleLfFwbAsg",
@@ -2062,7 +2062,7 @@
                         ]
                     ]
                 },
-                "Runtime": "python3.9",
+                "Runtime": "python3.13",
                 "Role": {
                     "Fn::GetAtt": [
                         "IamRoleLfFwbAsg",
