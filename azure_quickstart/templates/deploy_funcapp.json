@@ -65,7 +65,7 @@
     },
     "packageResUrl": {
       "type": "string",
-      "defaultValue": "https://github.com/fortinet/fortiweb-autoscale/releases/download/1.0.16/fortiweb-autoscale-azure-funcapp.zip",
+      "defaultValue": "https://github.com/fortinet/fortiweb-autoscale/releases/download/1.0.18/fortiweb-autoscale-azure-funcapp.zip",
       "metadata": {
         "description": "The public URL of package zip which contains the resource used to deploy the Function App."
       }
@@ -80,8 +80,8 @@
   },
   "resources": [
     {
-      "apiVersion": "2015-04-08",
       "type": "Microsoft.DocumentDb/databaseAccounts",
+      "apiVersion": "2025-10-15",
       "name": "[parameters('dbName')]",
       "location": "[variables('location')]",
       "properties": {
@@ -92,9 +92,13 @@
     {
       "type": "Microsoft.Storage/storageAccounts",
       "name": "[variables('storageAccountName')]",
-      "apiVersion": "2016-12-01",
+      "apiVersion": "2025-06-01",
       "location": "[variables('location')]",
       "kind": "Storage",
+      "properties": {
+		"minimumTlsVersion": "TLS1_2",  
+        "supportsHttpsTrafficOnly": true
+      },
       "sku": {
         "name": "Standard_LRS"
       }
@@ -134,7 +138,7 @@
         }
     },
     {
-      "apiVersion": "2015-08-01",
+      "apiVersion": "2022-03-01",
       "type": "Microsoft.Web/sites",
       "name": "[variables('functionAppName')]",
       "kind": "functionapp",
@@ -145,6 +149,8 @@
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
       ],
       "properties": {
+        "httpsOnly": true,
+        "minTlsVersion": "1.2",  
         "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
         "siteConfig": {
           "appSettings": [
@@ -174,7 +180,7 @@
             },
             {
               "name": "WEBSITE_NODE_DEFAULT_VERSION",
-              "value": "~18"
+              "value": "~22"
             },
             {
               "name": "FWB_BASE_CONFIG",

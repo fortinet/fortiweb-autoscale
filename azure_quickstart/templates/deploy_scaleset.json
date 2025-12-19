@@ -16,8 +16,11 @@
       "type": "string",
       "allowedValues": [
         "Standard_F2",
+        "Standard_F2s",
         "Standard_F4",
+        "Standard_F4s",
         "Standard_F8",
+        "Standard_F8s",
         "Standard_F16",
         "Standard_F16s"
       ],
@@ -238,13 +241,20 @@
         "metadata": {
             "description": "Assign Public IP address to FWB VM. If set to 'True', the Public IP address will be assigned to FWB VM. If set to 'False', no public IP address will be allocated to FWB."
         }
-    }
+    },
+    "EncryptVMDisk": {
+        "defaultValue": false,
+            "type": "Bool",
+            "metadata": {
+                "description": "Encrypt the VM disk"
+            }
+        }
   },
   "variables": {
     "namingInfix": "autoscale",
     "networkApiVersion": "2018-01-01",
     "storageApiVersion": "2018-07-01",
-    "computeApiVersion": "2017-12-01",
+    "computeApiVersion": "2025-04-01",
     "autoscaleApiVersion": "2015-04-01",
     "subnet1ID": "[resourceId(parameters('vnetResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnet1Name'))]",
     "subnet2ID": "[resourceId(parameters('vnetResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnet2Name'))]",
@@ -547,8 +557,7 @@
       "properties": {
         "overprovision": true,
         "upgradePolicy": {
-          "mode": "Manual",
-          "automaticOSUpgrade": false
+          "mode": "Manual"
         },
         "virtualMachineProfile": {
           "storageProfile": {
@@ -570,6 +579,9 @@
                 }
               }
             ]
+          },
+          "securityProfile": {
+            "encryptionAtHost": "[parameters('EncryptVMDisk')]"
           },
           "priority": "Regular",
           "osProfile": {
@@ -743,7 +755,7 @@
             "value": "[parameters('vmssName')]"
           },
           "packageResUrl": {
-            "value": "https://github.com/fortinet/fortiweb-autoscale/releases/download/1.0.17/fortiweb-autoscale-azure-funcapp.zip"
+            "value": "https://github.com/fortinet/fortiweb-autoscale/releases/download/1.0.18/fortiweb-autoscale-azure-funcapp.zip"
           }
         }
       }

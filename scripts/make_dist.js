@@ -490,6 +490,8 @@ async function makeDistAzureFuncApp() {
         ['node_modules', 'local', 'test', '.nyc_output', '.vscode', 'package-lock.json']);
     // install azure as dependency
     await npmInstallAt(rTempDirSrcFuncApp,
+        ['--save', rTempDirSrcCore.replace(rTempDirSrcFuncApp, '.')]);	// 
+    await npmInstallAt(rTempDirSrcFuncApp,
         ['--save', rTempDirSrcAzure.replace(rTempDirSrcFuncApp, '.')]);
     // read package info of module funcapp
     packageInfo = readPackageJsonAt(rTempDirSrcFuncApp);
