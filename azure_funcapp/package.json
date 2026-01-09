@@ -3,6 +3,7 @@
   "version": "1.0.0-beta",
   "description": "FortiWeb Autoscale Project - Azure Function App",
   "scripts": {
+    "start": "func start",
     "pretest": "eslint --fix .",
     "test": "nyc mocha --recursive './test/mocha/*.js'"
   },
@@ -13,19 +14,14 @@
     "url": "git+https://github.com/fortinet/fortiweb-autoscale"
   },
   "dependencies": {
-    "fortiweb-autoscale-azure": "file:lib/azure"
+    "@azure/functions": "^4.0.0",
+    "fortiweb-autoscale-azure": "file:lib/azure",
+    "fortiweb-autoscale-core": "file:lib/core"	  
   },
-  "devDependencies": {
-    "eslint": "^5.4.0",
-    "eslint-plugin-mocha": "^5.2.0",
-    "mocha": "^5.2.0",
-    "nyc": "^13.0.1"
-  },
-  "files_to_deploy": [
-    "*.js",
-    "host.json",
-    "autoscaleHandler/**",
-    "package.json",
-    "!package-lock.json"
-  ]
+  "devDependencies": {},
+  "main": "src/{index.js,functions/*.js}",
+  "eslint": "^5.4.0",
+  "eslint-plugin-mocha": "^5.2.0",
+  "mocha": "^5.2.0",
+  "nyc": "^13.0.1"
 }

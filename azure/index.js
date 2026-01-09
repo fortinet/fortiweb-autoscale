@@ -26,7 +26,37 @@ class AzureLogger extends AutoScaleCore.DefaultLogger {
     }
     log() {
         if (!(this.level && this.level.log === false)) {
-            this.logger.apply(null, arguments);
+            if (this.logger && typeof this.logger.log === 'function') {
+                this.logger.log.apply(this.logger, arguments);
+            }
+        }
+    }
+    debug() {
+        if (!(this.level && this.level.debug === false)) {
+            if (this.logger && typeof this.logger.debug === 'function') {
+                this.logger.debug.apply(this.logger, arguments);
+            }
+        }
+    }
+    info() {
+        if (!(this.level && this.level.info === false)) {
+            if (this.logger && typeof this.logger.info === 'function') {
+                this.logger.info.apply(this.logger, arguments);
+            }
+        }
+    }
+    warn() {
+        if (!(this.level && this.level.warn === false)) {
+            if (this.logger && typeof this.logger.warn === 'function') {
+                this.logger.warn.apply(this.logger, arguments);
+            }
+        }
+    }
+    error() {
+        if (!(this.level && this.level.error === false)) {
+            if (this.logger && typeof this.logger.error === 'function') {
+                this.logger.error.apply(this.logger, arguments);
+            }
         }
     }
 }
@@ -56,13 +86,28 @@ class AzurePlatform extends AutoScaleCore.CloudPlatform {
                     }
                 });
         };
+        try {
+            await _initDB();
+            console.log("_initDB completed successfully");
+        } catch (error) {
+            console.log("_initDB failed:", error);
+            throw error;
+        }
 
-        await Promise.all([
+        try {
+            await armClient.authWithServicePrincipal(process.env.REST_APP_ID,
+                process.env.REST_APP_SECRET, process.env.TENANT_ID);
+            console.log("authWithServicePrincipal completed successfully");
+        } catch (error) {
+            console.log("authWithServicePrincipal failed:", error);
+            throw error;
+        }
+        /*await Promise.all([
             _initDB(),
             armClient.authWithServicePrincipal(process.env.REST_APP_ID,
                 process.env.REST_APP_SECRET, process.env.TENANT_ID)]).catch(error => {
             throw error;
-        });
+        });*/
         armClient.useSubscription(process.env.SUBSCRIPTION_ID);
     }
 
@@ -261,7 +306,7 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             if (error instanceof Error) {
                 response = error.message;
             } else { response = JSON.stringify(error) }
-            context.log.error(response);
+            context.log(response);
         }
         context.res = {
             // status: 200, /* Defaults to 200 */
@@ -279,9 +324,9 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             masterIsHealthy = false,
             selfHealthCheck,
             masterHealthCheck,
-            callingInstanceId = this.findCallingInstanceId(_request),
-            callingScalesetInstanceId = this.findCallingScalesetInstanceId(_request),
-            heartBeatInterval = this.findHeartBeatInterval(_request),
+            callingInstanceId = await this.findCallingInstanceId(_request.clone()),
+            callingScalesetInstanceId = await  this.findCallingScalesetInstanceId(_request.clone()),
+            heartBeatInterval = await this.findHeartBeatInterval(_request.clone()),
             counter = 0,
             nextTime,
             getConfigTimeout,
@@ -609,42 +654,44 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
         return null;
     }
 
-    findCallingInstanceId(_request) {
+    async findCallingInstanceId(_request) {
         try {
-            // try to get instance id from headers
+			const body = await _request.json();
             if (_request && _request.headers && _request.headers['fwb-instance-id']) {
                 return _request.headers['fwb-instance-id'];
             } else {
-                // try to get instance id from body
-                if (_request && _request.body && _request.body.instance) {
-                    return _request.body.instance;
-                } else { return null }
-            }
+				if (body.instance) {
+                    return body.instance;
+                } else { 
+				return null }
+			}
         } catch (error) {
             return error ? null : null;
         }
     }
-    findCallingScalesetInstanceId(_request) {
+    async findCallingScalesetInstanceId(_request) {
         try {
-            // try to get instance id from headers
+			const body = await _request.json();
             if (_request && _request.headers && _request.headers['fwb-scaleset-instance-id']) {
                 return _request.headers['fwb-scaleset-instance-id'];
             } else {
-                // try to get instance id from body
-                if (_request && _request.body && _request.body.scalesetinstance) {
-                    return _request.body.scalesetinstance;
-                } else { return null }
-            }
+				if (body.scalesetinstance) {
+                    return body.scalesetinstance;
+                } else { 
+				return null }
+			}			
         } catch (error) {
             return error ? null : null;
         }
     }
 
-    findHeartBeatInterval(_request) {
+    async findHeartBeatInterval(_request) {
         let _interval = 120;
         try {
-            if (_request && _request.body && _request.body.interval) {
-                return isNaN(_request.body.interval) ? _interval : parseInt(_request.body.interval);
+            const clone = _request.clone() ;
+			const body =  await clone.json();
+			if (body.interval) {
+                return isNaN(body.interval) ? _interval : parseInt(body.interval);
             } else { return _interval }
         } catch (error) { // eslint-disable-line no-unused-var
             return _interval;
