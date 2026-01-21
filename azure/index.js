@@ -324,13 +324,44 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
             masterIsHealthy = false,
             selfHealthCheck,
             masterHealthCheck,
-            callingInstanceId = await this.findCallingInstanceId(_request.clone()),
-            callingScalesetInstanceId = await  this.findCallingScalesetInstanceId(_request.clone()),
-            heartBeatInterval = await this.findHeartBeatInterval(_request.clone()),
+            callingInstanceId,
+            callingScalesetInstanceId,
+            heartBeatInterval,
             counter = 0,
             nextTime,
             getConfigTimeout,
             virtualMachine;
+
+        // Get values using the original approach but with better error handling
+        // Clone the request once and reuse for all parsing operations if possible
+        let requestForInstanceId = _request;
+        let requestForScaleSetId = _request;
+        let requestForInterval = _request;
+
+        try {
+            requestForInstanceId = _request.clone();
+        } catch (error) {
+            // If cloning fails, use the original request
+            requestForInstanceId = _request;
+        }
+
+        try {
+            requestForScaleSetId = _request.clone();
+        } catch (error) {
+            // If cloning fails, use the original request
+            requestForScaleSetId = _request;
+        }
+
+        try {
+            requestForInterval = _request.clone();
+        } catch (error) {
+            // If cloning fails, use the original request
+            requestForInterval = _request;
+        }
+
+        callingInstanceId = await this.findCallingInstanceId(requestForInstanceId);
+        callingScalesetInstanceId = await this.findCallingScalesetInstanceId(requestForScaleSetId);
+        heartBeatInterval = await this.findHeartBeatInterval(requestForInterval);
 
         // verify the caller (diagram: trusted source?)
         if( callingInstanceId == "get_master_info") {
@@ -656,43 +687,94 @@ class AzureAutoscaleHandler extends AutoScaleCore.AutoscaleHandler {
 
     async findCallingInstanceId(_request) {
         try {
-			const body = await _request.json();
+            // Try to get from headers first
             if (_request && _request.headers && _request.headers['fwb-instance-id']) {
                 return _request.headers['fwb-instance-id'];
+            }
+
+            // If not in headers, try to parse from body
+            let requestBody;
+            try {
+                // Try to clone the request for body parsing
+                const clonedRequest = _request.clone();
+                requestBody = await clonedRequest.json();
+            } catch (cloneError) {
+                // If cloning fails, try to parse directly from the original request
+                // but only if the body hasn't been used yet
+                if (_request.body && !_request.bodyUsed) {
+                    requestBody = await _request.json();
+                }
+            }
+
+            if (requestBody && requestBody.instance) {
+                return requestBody.instance;
             } else {
-				if (body.instance) {
-                    return body.instance;
-                } else { 
-				return null }
-			}
+                return null;
+            }
         } catch (error) {
-            return error ? null : null;
+            return null;
         }
     }
+
     async findCallingScalesetInstanceId(_request) {
         try {
-			const body = await _request.json();
+            // Try to get from headers first
             if (_request && _request.headers && _request.headers['fwb-scaleset-instance-id']) {
                 return _request.headers['fwb-scaleset-instance-id'];
+            }
+
+            // If not in headers, try to parse from body
+            let requestBody;
+            try {
+                // Try to clone the request for body parsing
+                const clonedRequest = _request.clone();
+                requestBody = await clonedRequest.json();
+            } catch (cloneError) {
+                // If cloning fails, try to parse directly from the original request
+                // but only if the body hasn't been used yet
+                if (_request.body && !_request.bodyUsed) {
+                    requestBody = await _request.json();
+                }
+            }
+
+            if (requestBody && requestBody.scalesetinstance) {
+                return requestBody.scalesetinstance;
             } else {
-				if (body.scalesetinstance) {
-                    return body.scalesetinstance;
-                } else { 
-				return null }
-			}			
+                return null;
+            }
         } catch (error) {
-            return error ? null : null;
+            return null;
         }
     }
 
     async findHeartBeatInterval(_request) {
         let _interval = 120;
         try {
-            const clone = _request.clone() ;
-			const body =  await clone.json();
-			if (body.interval) {
-                return isNaN(body.interval) ? _interval : parseInt(body.interval);
-            } else { return _interval }
+            // Try to get from headers first
+            if (_request && _request.headers && _request.headers['fwb-heartbeat-interval']) {
+                const interval = _request.headers['fwb-heartbeat-interval'];
+                return isNaN(interval) ? _interval : parseInt(interval);
+            }
+
+            // If not in headers, try to parse from body
+            let requestBody;
+            try {
+                // Try to clone the request for body parsing
+                const clonedRequest = _request.clone();
+                requestBody = await clonedRequest.json();
+            } catch (cloneError) {
+                // If cloning fails, try to parse directly from the original request
+                // but only if the body hasn't been used yet
+                if (_request.body && !_request.bodyUsed) {
+                    requestBody = await _request.json();
+                }
+            }
+
+            if (requestBody && requestBody.interval) {
+                return isNaN(requestBody.interval) ? _interval : parseInt(requestBody.interval);
+            } else {
+                return _interval;
+            }
         } catch (error) { // eslint-disable-line no-unused-var
             return _interval;
         }
