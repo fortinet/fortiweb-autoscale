@@ -755,7 +755,7 @@
             "value": "[parameters('vmssName')]"
           },
           "packageResUrl": {
-            "value": "https://github.com/fortinet/fortiweb-autoscale/releases/download/1.0.21/fortiweb-autoscale-azure-funcapp.zip"
+            "value": "https://github.com/fortinet/fortiweb-autoscale/releases/download/1.0.22/fortiweb-autoscale-azure-funcapp.zip"
           }
         }
       }
